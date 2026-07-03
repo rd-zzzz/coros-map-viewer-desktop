@@ -29,18 +29,42 @@
             --error-dim: rgba(248, 113, 113, 0.12);
             --warn: #fbbf24;
             --warn-dim: rgba(251, 191, 36, 0.12);
-            --purple: #c9a0dc;
-            --green: #86efac;
+            --purple: #7c5eab;
+            --green: #2d8a56;
             --titlebar-h: 36px;
             --statusbar-h: 28px;
             --radius: 8px;
             --radius-sm: 5px;
             --shadow: 0 4px 24px rgba(0,0,0,0.4);
             --transition: 200ms ease;
+            --map-bg: #1a1a2e;
+        }
+        body.light-theme {
+            --bg-panel: rgba(248, 246, 241, 0.95);
+            --bg-panel-solid: #f8f6f1;
+            --bg-surface: rgba(0,0,0,0.04);
+            --bg-surface-hover: rgba(0,0,0,0.07);
+            --border: rgba(0, 0, 0, 0.1);
+            --border-bright: rgba(0, 0, 0, 0.2);
+            --text-primary: #1a1a2e;
+            --text-secondary: #4a4a5a;
+            --text-muted: #8a8a9a;
+            --accent: #2563eb;
+            --accent-dim: rgba(37, 99, 235, 0.1);
+            --success: #16a34a;
+            --success-dim: rgba(22, 163, 74, 0.1);
+            --error: #dc2626;
+            --error-dim: rgba(220, 38, 38, 0.08);
+            --warn: #d97706;
+            --warn-dim: rgba(217, 119, 6, 0.1);
+            --purple: #7c3aed;
+            --green: #16a34a;
+            --shadow: 0 4px 24px rgba(0,0,0,0.1);
+            --map-bg: #e8e6e1;
         }
 
         * { margin: 0; padding: 0; box-sizing: border-box; }
-        body { overflow: hidden; background: #0c0c20; font-family: -apple-system, "Segoe UI", "Microsoft YaHei", sans-serif; }
+        body { overflow: hidden; background: var(--bg-panel-solid); font-family: -apple-system, "Segoe UI", "Microsoft YaHei", sans-serif; }
 
         /* ============================================================
            Title Bar (Custom, Tauri decorations:false)
@@ -48,7 +72,7 @@
         #titlebar {
             position: fixed; top: 0; left: 0; right: 0;
             height: var(--titlebar-h); z-index: 100;
-            background: linear-gradient(180deg, #141430, #0e0e26);
+            background: var(--bg-panel-solid);
             border-bottom: 1px solid var(--border);
             display: flex; align-items: center;
             -webkit-app-region: drag; user-select: none;
@@ -71,10 +95,21 @@
             background: transparent; color: var(--text-secondary);
             cursor: pointer; display: flex; align-items: center; justify-content: center;
             transition: background var(--transition), color var(--transition);
+            -webkit-app-region: no-drag; position: relative; z-index: 1;
         }
         .win-btn:hover { background: rgba(255,255,255,0.1); color: #fff; }
         .win-btn.close:hover { background: #e81123; color: #fff; }
         .win-btn svg { width: 12px; height: 12px; }
+        body.light-theme .win-btn:hover { background: rgba(0,0,0,0.06); }
+        body.light-theme .toggle-row { border-top-color: rgba(0,0,0,0.06); }
+        body.light-theme .toggle-track { background: rgba(0,0,0,0.12); }
+        body.light-theme #progress-bar { background: rgba(0,0,0,0.06); }
+        body.light-theme .hint { border-top-color: rgba(0,0,0,0.05); }
+        body.light-theme .prop-table td { border-bottom-color: rgba(0,0,0,0.04); }
+        body.light-theme ::-webkit-scrollbar-thumb { background: rgba(0,0,0,0.15); }
+        body.light-theme ::-webkit-scrollbar-thumb:hover { background: rgba(0,0,0,0.25); }
+        body.light-theme #zoom-nav .zoom-btn:hover { background: rgba(0,0,0,0.06); }
+        body.light-theme #zoom-nav .zoom-btn + .zoom-btn { border-top-color: var(--border); }
 
         /* ============================================================
            Map Container
@@ -82,7 +117,7 @@
         #map {
             position: absolute;
             top: var(--titlebar-h); bottom: var(--statusbar-h); left: 0; right: 0;
-            background: #1a1a2e;
+            background: var(--map-bg);
         }
 
         /* ============================================================
@@ -91,7 +126,7 @@
         #statusbar {
             position: fixed; bottom: 0; left: 0; right: 0;
             height: var(--statusbar-h); z-index: 100;
-            background: linear-gradient(180deg, #0e0e26, #141430);
+            background: var(--bg-panel-solid);
             border-top: 1px solid var(--border);
             display: flex; align-items: center; padding: 0 16px;
             font: 11px/1 "Consolas", "Cascadia Code", monospace;
@@ -143,7 +178,12 @@
             font-size: 13px; font-weight: 600; color: var(--text-primary);
         }
         .panel-header svg { width: 16px; height: 16px; color: var(--accent); opacity: 0.8; }
-        .panel-body { padding: 14px 16px; }
+        .panel-header .collapse-icon {
+            margin-left: auto; transition: transform var(--transition);
+        }
+        .panel-header .collapse-icon.collapsed { transform: rotate(-90deg); }
+        .panel-body { padding: 14px 16px; max-height: 600px; transition: max-height 0.25s ease, opacity var(--transition), padding var(--transition); overflow: hidden; }
+        .panel-body.collapsed { max-height: 0 !important; opacity: 0; padding: 0 16px; }
 
         /* File Input Area */
         .file-drop {
@@ -169,6 +209,14 @@
         }
         .file-drop.has-file { border-style: solid; border-color: var(--success); background: var(--success-dim); }
         .file-drop.has-file svg { color: var(--success); }
+        .file-drop.drag-over { border-color: var(--accent) !important; background: var(--accent-dim) !important; transform: scale(1.02); }
+        .btn-clear-all {
+            width: 100%; margin-top: 8px; padding: 6px 0;
+            background: var(--error-dim); border: 1px solid rgba(248,113,113,0.3);
+            border-radius: var(--radius-sm); color: var(--error);
+            font-size: 11px; cursor: pointer; transition: all var(--transition);
+        }
+        .btn-clear-all:hover { background: rgba(248,113,113,0.2); border-color: var(--error); }
 
         /* Toggle Switch */
         .toggle-row {
@@ -345,16 +393,68 @@
         ::-webkit-scrollbar-thumb:hover { background: rgba(255,255,255,0.25); }
 
         /* ============================================================
-           Zoom Display
+           Unified Zoom Widget (top-right)
+           Combines: zoom value, +/- buttons, scale bar
         ============================================================ */
-        #zoom-display {
+        #zoom-widget {
             position: absolute;
             top: calc(var(--titlebar-h) + 12px);
             right: 12px; z-index: 10;
-            padding: 5px 12px;
-            font: bold 13px/1 "Consolas", monospace;
-            color: var(--text-secondary);
+            display: flex; flex-direction: column; align-items: flex-end; gap: 6px;
         }
+        #zoom-nav {
+            background: var(--bg-panel);
+            border: 1px solid var(--border);
+            border-radius: var(--radius);
+            backdrop-filter: blur(16px);
+            box-shadow: var(--shadow);
+            display: flex; flex-direction: column; overflow: hidden;
+        }
+        #zoom-nav .zoom-btn {
+            width: 32px; height: 32px; border: none;
+            background: transparent; color: var(--text-secondary);
+            cursor: pointer; display: flex; align-items: center; justify-content: center;
+            transition: background var(--transition), color var(--transition);
+            font: bold 14px/1 "Consolas", monospace;
+        }
+        #zoom-nav .zoom-btn:hover { background: rgba(255,255,255,0.1); color: #fff; }
+        #zoom-nav .zoom-btn + .zoom-btn { border-top: 1px solid var(--border); }
+        #zoom-nav .zoom-btn svg { width: 14px; height: 14px; }
+        #zoom-value {
+            background: var(--bg-panel);
+            border: 1px solid var(--border);
+            border-radius: var(--radius-sm);
+            backdrop-filter: blur(16px);
+            box-shadow: var(--shadow);
+            padding: 4px 10px;
+            font: bold 12px/1 "Consolas", monospace;
+            color: var(--text-secondary);
+            text-align: center;
+        }
+        #scale-bar {
+            background: var(--bg-panel);
+            border: 1px solid var(--border);
+            border-radius: var(--radius-sm);
+            backdrop-filter: blur(16px);
+            box-shadow: var(--shadow);
+            padding: 4px 10px;
+            font: 10px/1 "Consolas", monospace;
+            color: var(--text-muted);
+            white-space: nowrap;
+            display: flex; align-items: center; gap: 4px;
+        }
+        #scale-bar .scale-line {
+            width: 40px; height: 2px;
+            background: var(--text-muted);
+            position: relative;
+        }
+        #scale-bar .scale-line::before,
+        #scale-bar .scale-line::after {
+            content: ""; position: absolute; width: 1px; height: 5px;
+            background: var(--text-muted); top: -2px;
+        }
+        #scale-bar .scale-line::before { left: 0; }
+        #scale-bar .scale-line::after { right: 0; }
     </style>
 </head>
 <body>
@@ -377,17 +477,19 @@
 
     <!-- Controls Panel -->
     <div id="controls" class="panel">
-        <div class="panel-header">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>
-            数据加载
+        <div class="panel-header" id="controls-toggle" style="cursor:pointer">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+            设置
+            <svg class="collapse-icon" viewBox="0 0 12 12" width="12" height="12"><polyline points="2,4 6,8 10,4" fill="none" stroke="currentColor" stroke-width="1.5"/></svg>
         </div>
-        <div class="panel-body">
+        <div class="panel-body" id="controls-body">
             <div class="file-drop" id="file-drop">
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>
                 <div class="drop-text">点击选择文件夹</div>
-                <div class="drop-hint">支持 VCM / VSM 子目录</div>
+                <div class="drop-hint">支持 VCM / VSM 子目录及 .pmtiles 文件</div>
                 <input type="file" id="folder-input" webkitdirectory multiple />
             </div>
+            <button id="btn-clear-all" class="btn-clear-all" style="display:none">清除所有文件</button>
             <div id="main-status"></div>
             <div id="progress-bar"><div class="pct" id="progress-pct"></div><div class="fill" id="progress-fill"></div></div>
 
@@ -395,6 +497,15 @@
                 <span class="toggle-label">显示 VCM 等高线</span>
                 <label class="toggle-switch">
                     <input type="checkbox" id="vcm-toggle" checked />
+                    <span class="toggle-track"></span>
+                    <span class="toggle-thumb"></span>
+                </label>
+            </div>
+
+            <div class="toggle-row">
+                <span class="toggle-label">浅色主题</span>
+                <label class="toggle-switch">
+                    <input type="checkbox" id="theme-toggle" />
                     <span class="toggle-track"></span>
                     <span class="toggle-thumb"></span>
                 </label>
@@ -422,8 +533,18 @@
         </div>
     </div>
 
-    <!-- Zoom Display -->
-    <div id="zoom-display" class="panel">Z 8.00</div>
+    <!-- Unified Zoom Widget -->
+    <div id="zoom-widget">
+        <div id="zoom-value">Z 8.00</div>
+        <div id="zoom-nav">
+            <button class="zoom-btn" id="zoom-in" title="放大"><svg viewBox="0 0 12 12"><line x1="6" y1="2" x2="6" y2="10" stroke="currentColor" stroke-width="1.5"/><line x1="2" y1="6" x2="10" y2="6" stroke="currentColor" stroke-width="1.5"/></svg></button>
+            <button class="zoom-btn" id="zoom-out" title="缩小"><svg viewBox="0 0 12 12"><line x1="2" y1="6" x2="10" y2="6" stroke="currentColor" stroke-width="1.5"/></svg></button>
+        </div>
+        <div id="scale-bar">
+            <div class="scale-line"></div>
+            <span id="scale-text">—</span>
+        </div>
+    </div>
 
     <!-- Info Panel -->
     <div id="info-panel" class="panel">
@@ -474,6 +595,55 @@
     <script>
     (function () {
         "use strict";
+
+        /* ============================================================
+           Controls Panel Collapse
+        ============================================================ */
+        var controlsBody = document.getElementById("controls-body");
+        var collapseIcon = document.querySelector("#controls-toggle .collapse-icon");
+        document.getElementById("controls-toggle").onclick = function () {
+            controlsBody.classList.toggle("collapsed");
+            collapseIcon.classList.toggle("collapsed");
+        };
+
+        /* ============================================================
+           Theme Toggle
+        ============================================================ */
+        var themeCheckbox = document.getElementById("theme-toggle");
+        var savedTheme = localStorage.getItem("mapviewer-theme") || "dark";
+        if (savedTheme === "light") {
+            document.body.classList.add("light-theme");
+            themeCheckbox.checked = true;
+        }
+
+        function updateMapLabelColors(isLight) {
+            var tc = isLight ? "#222" : "#eee";
+            var hc = isLight ? "#fff" : "#111";
+            var cs = isLight ? "#555" : "#fff";
+            for (var sn in loadedSources) {
+                var ids = loadedSources[sn].ids;
+                for (var i = 0; i < ids.length; i++) {
+                    try {
+                        if (!map.getLayer(ids[i])) continue;
+                        if (ids[i].indexOf("_label") === ids[i].length - 6) {
+                            map.setPaintProperty(ids[i], "text-color", tc);
+                            map.setPaintProperty(ids[i], "text-halo-color", hc);
+                        } else if (ids[i].indexOf("_circle") === ids[i].length - 7) {
+                            map.setPaintProperty(ids[i], "circle-stroke-color", cs);
+                        }
+                    } catch (e) {}
+                }
+            }
+        }
+
+        themeCheckbox.addEventListener("change", function () {
+            document.body.classList.toggle("light-theme", themeCheckbox.checked);
+            localStorage.setItem("mapviewer-theme", themeCheckbox.checked ? "light" : "dark");
+            if (map && map.getStyle()) {
+                map.setPaintProperty("background", "background-color", themeCheckbox.checked ? "#e8e6e1" : "#1a1a2e");
+                updateMapLabelColors(themeCheckbox.checked);
+            }
+        });
 
         /* ============================================================
            Tauri Window Controls
@@ -531,6 +701,8 @@
         var vcmVisible = true;
         var MAX_ACTIVE_SOURCES = 24;
         var loadingActive = false;
+        var accumulatedFiles = [];
+        var accumulatedNames = {};
 
         /* ============================================================
            Status Bar Helpers
@@ -556,10 +728,13 @@
         /* ============================================================
            Map Init
         ============================================================ */
+        var isLightTheme = document.body.classList.contains("light-theme");
         var map = new maplibregl.Map({
             container: "map",
-            hash: true,
             minZoom: 8,
+            center: [108, 34],
+            zoom: 9.5,
+            attributionControl: false,
             style: {
                 version: 8,
                 glyphs: "fonts/{fontstack}/{range}.pbf",
@@ -568,28 +743,47 @@
                 layers: [{
                     id: "background",
                     type: "background",
-                    paint: { "background-color": "#1a1a2e" }
+                    paint: { "background-color": isLightTheme ? "#e8e6e1" : "#1a1a2e" }
                 }]
             }
         });
 
-        map.addControl(new maplibregl.NavigationControl(), "top-right");
-        map.addControl(new maplibregl.ScaleControl(), "bottom-right");
+        /* ============================================================
+           Zoom Widget
+        ============================================================ */
+        var zoomValueEl = document.getElementById("zoom-value");
+        var scaleTextEl = document.getElementById("scale-text");
+
+        document.getElementById("zoom-in").onclick = function () { map.zoomIn(); };
+        document.getElementById("zoom-out").onclick = function () { map.zoomOut(); };
+
+        map.on("zoom", function () {
+            var z = map.getZoom();
+            zoomValueEl.textContent = "Z " + z.toFixed(2);
+            document.getElementById("stat-zoom").textContent = "Z" + z.toFixed(1);
+            updateScaleBar();
+        });
+        map.on("move", function () { updateScaleBar(); });
+
+        function updateScaleBar() {
+            var center = map.getCenter();
+            var mpp = 156543.03392 * Math.cos(center.lat * Math.PI / 180) / Math.pow(2, map.getZoom());
+            var targetWidth = 60;
+            var realWidth = mpp * targetWidth;
+            var dist = formatDistance(realWidth);
+            scaleTextEl.textContent = dist;
+        }
+        function formatDistance(m) {
+            if (m >= 1000) return (m / 1000).toFixed(1) + " km";
+            if (m >= 100) return Math.round(m) + " m";
+            if (m >= 10) return Math.round(m) + " m";
+            return m.toFixed(1) + " m";
+        }
 
         map.on("load", function () { dbg("Map ready", "dbg-ok"); });
         map.on("error", function (e) {
             var msg = e.error ? (e.error.message || String(e.error)) : JSON.stringify(e);
             dbg("ERR: " + msg, "dbg-err");
-        });
-
-        /* ============================================================
-           Zoom Display
-        ============================================================ */
-        var zoomEl = document.getElementById("zoom-display");
-        map.on("zoom", function () {
-            var z = map.getZoom();
-            zoomEl.textContent = "Z " + z.toFixed(2);
-            document.getElementById("stat-zoom").textContent = "Z" + z.toFixed(1);
         });
 
         /* ============================================================
@@ -619,11 +813,12 @@
         }
 
         function detectType(file) {
-            var path = file.webkitRelativePath || "";
+            var path = file.webkitRelativePath || file._dropPath || "";
             if (/[/\\]VCM[/\\]/i.test(path)) return "vcm";
             if (/[/\\]VSM[/\\]/i.test(path)) return "vsm";
             if (/^C\d/i.test(file.name)) return "vcm";
             if (/^S\d/i.test(file.name)) return "vsm";
+            if (file.name.toLowerCase().endsWith(".pmtiles")) return "generic";
             return null;
         }
 
@@ -632,13 +827,30 @@
         }
 
         /* ============================================================
+           Lazy DiskSource — reads bytes from local files via Rust IPC
+        ============================================================ */
+        function DiskSource(path) {
+            this._path = path;
+        }
+        DiskSource.prototype.getKey = function () { return this._path; };
+        DiskSource.prototype.getBytes = function (offset, length) {
+            return window.__TAURI__.core.invoke("read_file_slice", {
+                path: this._path, offset: offset, length: length
+            }).then(function (bytes) {
+                return { data: new Uint8Array(bytes).buffer };
+            });
+        };
+
+        /* ============================================================
            Load / Unload
         ============================================================ */
         function loadEntry(entry) {
             var sn = entry.sourceName;
-            var inst = new pmtiles.PMTiles(new pmtiles.FileSource(entry.file));
+            var source = entry.diskPath ? new DiskSource(entry.diskPath) : new pmtiles.FileSource(entry.file);
+            var inst = new pmtiles.PMTiles(source);
             protocol.add(inst);
-            map.addSource(sn, { type: "vector", url: "pmtiles://" + inst.source.getKey() });
+            var key = inst.source.getKey();
+            map.addSource(sn, { type: "vector", url: "pmtiles://" + key });
 
             var vl = (entry.meta && entry.meta.vector_layers) ? entry.meta.vector_layers : [];
             var isVCM = entry.type === "vcm";
@@ -670,10 +882,11 @@
                             paint: { "line-color": c, "line-width": 0.5, "line-opacity": 0.5 } });
                         layerIds.push(pfx + "_outline");
 
+                        var isLight = document.body.classList.contains("light-theme");
                         map.addLayer({ id: pfx + "_circle", source: sn, "source-layer": lid, type: "circle",
                             filter: ["==", ["geometry-type"], "Point"],
                             paint: { "circle-color": c, "circle-radius": ["interpolate", ["linear"], ["zoom"], 8, 2, 14, 5],
-                                "circle-stroke-color": "#fff", "circle-stroke-width": 1 } });
+                                "circle-stroke-color": isLight ? "#555" : "#fff", "circle-stroke-width": 1 } });
                         layerIds.push(pfx + "_circle");
 
                         map.addLayer({ id: pfx + "_label", source: sn, "source-layer": lid, type: "symbol",
@@ -682,13 +895,15 @@
                                 "text-font": ["Noto Sans Regular"],
                                 "text-size": ["interpolate", ["linear"], ["zoom"], 8, 7, 14, 12],
                                 "text-allow-overlap": false },
-                            paint: { "text-color": "#eee", "text-halo-color": "#111", "text-halo-width": 1.5 } });
+                            paint: { "text-color": isLight ? "#222" : "#eee",
+                                "text-halo-color": isLight ? "#fff" : "#111",
+                                "text-halo-width": 1.5 } });
                         layerIds.push(pfx + "_label");
                     }
                 })(i);
             }
 
-            loadedSources[sn] = { ids: layerIds, type: entry.type };
+            loadedSources[sn] = { ids: layerIds, type: entry.type, key: key };
         }
 
         function unloadSource(sn) {
@@ -697,6 +912,7 @@
                 for (var i = 0; i < entry.ids.length; i++) {
                     try { if (map.getLayer(entry.ids[i])) map.removeLayer(entry.ids[i]); } catch (e) {}
                 }
+                if (entry.key) { try { protocol.remove(entry.key); } catch (e) {} }
             }
             try { if (map.getSource(sn)) map.removeSource(sn); } catch (e) {}
             delete loadedSources[sn];
@@ -746,7 +962,7 @@
                             }
                         }
                         loaded++;
-                    } catch (err) { dbg("Load fail: " + e.sourceName + ": " + err.message, "dbg-err"); }
+                    } catch (err) { unloadSource(e.sourceName); dbg("Load fail: " + e.sourceName + ": " + err.message, "dbg-err"); }
                 }
             }
 
@@ -765,92 +981,114 @@
            Index Folder
         ============================================================ */
         async function indexFolder(files) {
+            if (loadingActive) return;
             var statusEl = document.getElementById("main-status");
             var progress = document.getElementById("progress-bar");
             var progressFill = document.getElementById("progress-fill");
             var progressPct = document.getElementById("progress-pct");
             var fileDrop = document.getElementById("file-drop");
+            var btnClearAll = document.getElementById("btn-clear-all");
 
-            var fileList = [];
+            var newCount = 0, skipCount = 0, errCount = 0;
+            var totalNew = 0;
             for (var fi = 0; fi < files.length; fi++) {
-                if (files[fi].name.toLowerCase().endsWith(".t")) fileList.push(files[fi]);
+                var fn = files[fi].name.toLowerCase();
+                if ((fn.endsWith(".t") || fn.endsWith(".pmtiles")) && !accumulatedNames[files[fi].name]) totalNew++;
             }
 
-            if (!fileList.length) {
-                statusEl.innerHTML = '<span class="err">未找到 .t 文件</span>';
-                dbg("No .t files", "dbg-err");
+            if (!totalNew) {
+                statusEl.innerHTML = '<span class="dim">全部重复，无新文件</span>';
+                dbg("All " + files.length + " files duplicated", "dbg-warn");
+                btnClearAll.style.display = accumulatedFiles.length ? "block" : "none";
                 return;
             }
 
-            dbg("Scanning " + fileList.length + " files...");
-            fileDrop.classList.add("has-file");
-            fileDrop.querySelector(".drop-text").textContent = "已选择文件夹";
-            fileDrop.querySelector(".drop-hint").textContent = fileList.length + " 个 .t 文件";
+            var wasEmpty = allEntries.length === 0;
 
-            for (var s in loadedSources) unloadSource(s);
-            allEntries = [];
+            dbg("Scanning " + totalNew + " new files (" + (accumulatedFiles.length) + " existing)...");
+            fileDrop.classList.add("has-file");
+            btnClearAll.style.display = "block";
 
             statusEl.innerHTML = '<span class="dim">扫描中...</span>';
+            progressFill.style.width = "0%";
             progress.style.display = "block";
             setLoading(true, "扫描中...");
 
-            var vcmCount = 0, vsmCount = 0, errCount = 0;
-            var globalMinZoom = 99;
+            var vcmCount = 0, vsmCount = 0, genericCount = 0;
+            var processed = 0;
 
-            for (var idx = 0; idx < fileList.length; idx++) {
-                var file = fileList[idx];
+            for (var idx = 0; idx < files.length; idx++) {
+                var file = files[idx];
+                if (!file.name.toLowerCase().endsWith(".t") && !file.name.toLowerCase().endsWith(".pmtiles")) continue;
+                if (accumulatedNames[file.name]) { skipCount++; continue; }
+
                 var type = detectType(file);
+                if (!type) continue;
 
-                if (type) {
-                    try {
-                        var inst = new pmtiles.PMTiles(new pmtiles.FileSource(file));
-                        var header = await inst.getHeader();
-                        var meta = await inst.getMetadata();
-                        var sn = type + "_" + file.name.replace(/\.t$/i, "");
+                try {
+                    var inst = new pmtiles.PMTiles(new pmtiles.FileSource(file));
+                    var header = await inst.getHeader();
+                    var meta = await inst.getMetadata();
+                    var sn = type + "_" + file.name.replace(/\.(t|pmtiles)$/i, "");
 
-                        allEntries.push({
-                            file: file, header: header, meta: meta,
-                            bounds: [header.minLon, header.minLat, header.maxLon, header.maxLat],
-                            sourceName: sn, type: type
-                        });
+                    accumulatedFiles.push(file);
+                    accumulatedNames[file.name] = true;
 
-                        if (header.minZoom < globalMinZoom) globalMinZoom = header.minZoom;
-                        if (type === "vcm") vcmCount++; else vsmCount++;
-                    } catch (e) {
-                        errCount++;
-                        if (errCount <= 3) dbg("Fail: " + file.name + ": " + e.message, "dbg-err");
-                    }
+                    allEntries.push({
+                        file: file, header: header, meta: meta,
+                        bounds: [header.minLon, header.minLat, header.maxLon, header.maxLat],
+                        sourceName: sn, type: type
+                    });
+
+                    if (type === "vcm") vcmCount++;
+                    else if (type === "vsm") vsmCount++;
+                    else genericCount++;
+                    newCount++;
+                } catch (e) {
+                    errCount++;
+                    if (errCount <= 3) dbg("Fail: " + file.name + ": " + e.message, "dbg-err");
                 }
 
-                if (idx % 20 === 0 || idx === fileList.length - 1) {
-                    var pct = Math.round(((idx + 1) / fileList.length) * 100);
+                processed++;
+                if (processed % 10 === 0 || processed === totalNew) {
+                    var pct = Math.round((processed / totalNew) * 100);
                     progressFill.style.width = pct + "%";
                     progressPct.textContent = pct + "%";
-                    statusEl.innerHTML = '<span class="dim">扫描 ' + (idx + 1) + "/" + fileList.length + "</span>";
+                    statusEl.innerHTML = '<span class="dim">扫描 ' + processed + "/" + totalNew + "</span>";
                     await yieldUI();
                 }
             }
 
             progress.style.display = "none";
-            statusEl.innerHTML = '<span class="ok">已加载: ' + vcmCount + " VCM + " + vsmCount + " VSM" +
-                (errCount ? " (" + errCount + " 失败)" : "") + "</span>";
+            fileDrop.querySelector(".drop-text").textContent = "已选择文件夹";
+            fileDrop.querySelector(".drop-hint").textContent = accumulatedFiles.length + " 个文件（共 " + allEntries.length + " 条）";
+            statusEl.innerHTML = '<span class="ok">+' + newCount + " VCM=" + vcmCount + " VSM=" + vsmCount + (genericCount ? " Other=" + genericCount : "") +
+                (skipCount ? " · 跳过 " + skipCount + " 重复" : "") +
+                (errCount ? " · " + errCount + " 失败" : "") + "</span>";
             setLoading(false, "Ready");
-            dbg("Done: " + allEntries.length + " entries, minZoom=" + globalMinZoom, "dbg-ok");
+            dbg("Added " + newCount + ", skipped " + skipCount + ", total " + allEntries.length + " entries", "dbg-ok");
 
-            var minLon = 180, minLat = 90, maxLon = -180, maxLat = -90;
-            for (var ei = 0; ei < allEntries.length; ei++) {
-                var eb = allEntries[ei].bounds;
-                if (eb[0] < minLon) minLon = eb[0];
-                if (eb[1] < minLat) minLat = eb[1];
-                if (eb[2] > maxLon) maxLon = eb[2];
-                if (eb[3] > maxLat) maxLat = eb[3];
-            }
+            if (wasEmpty && allEntries.length > 0) {
+                var minLon = 180, minLat = 90, maxLon = -180, maxLat = -90;
+                for (var ei = 0; ei < allEntries.length; ei++) {
+                    var eb = allEntries[ei].bounds;
+                    if (eb[0] < minLon) minLon = eb[0];
+                    if (eb[1] < minLat) minLat = eb[1];
+                    if (eb[2] > maxLon) maxLon = eb[2];
+                    if (eb[3] > maxLat) maxLat = eb[3];
+                }
 
-            if (minLon < maxLon) {
-                map.fitBounds([[minLon, minLat], [maxLon, maxLat]], { padding: 60, animate: false });
-                if (map.getZoom() < globalMinZoom) {
-                    dbg("Zoom " + map.getZoom().toFixed(1) + " → " + globalMinZoom, "dbg-warn");
-                    map.setZoom(globalMinZoom);
+                var globalMinZoom = 99;
+                for (var gi = 0; gi < allEntries.length; gi++) {
+                    if (allEntries[gi].header.minZoom < globalMinZoom) globalMinZoom = allEntries[gi].header.minZoom;
+                }
+
+                if (minLon < maxLon) {
+                    map.fitBounds([[minLon, minLat], [maxLon, maxLat]], { padding: 60, animate: false });
+                    if (map.getZoom() < globalMinZoom) {
+                        dbg("Zoom " + map.getZoom().toFixed(1) + " → " + globalMinZoom, "dbg-warn");
+                        map.setZoom(globalMinZoom);
+                    }
                 }
             }
 
@@ -898,7 +1136,7 @@
             clearTimeout(moveTimer);
             moveTimer = setTimeout(updateViewport, 200);
         });
-        map.on("zoomend", function () { updateViewport(); });
+        map.on("zoomend", function () { clearTimeout(moveTimer); updateViewport(); });
 
         /* Info Panel */
         var infoPanel = document.getElementById("info-panel");
@@ -946,9 +1184,177 @@
         });
 
         /* Folder Input */
-        document.getElementById("folder-input").addEventListener("change", function (e) {
-            if (e.target.files.length) indexFolder(e.target.files);
+        var folderInput = document.getElementById("folder-input");
+        folderInput.addEventListener("change", function (e) {
+            if (e.target.files.length) {
+                var snapshot = Array.from(e.target.files);
+                e.target.value = "";
+                indexFolder(snapshot);
+            }
         });
+
+        /* Tauri Native Drag & Drop */
+        var fileDrop = document.getElementById("file-drop");
+        var tauriAvailable = !!(window.__TAURI__ && window.__TAURI__.event);
+
+        if (tauriAvailable) {
+            var listen = window.__TAURI__.event.listen;
+            listen("tauri://drag-enter", function () {
+                fileDrop.classList.add("drag-over");
+            });
+            listen("tauri://drag-leave", function () {
+                fileDrop.classList.remove("drag-over");
+            });
+            listen("tauri://drag-drop", function (event) {
+                fileDrop.classList.remove("drag-over");
+                var paths = (event.payload && event.payload.paths) || [];
+                if (!paths.length) return;
+                loadDroppedPaths(paths);
+            });
+        }
+
+        function loadDroppedPaths(paths) {
+            dbg("Drag-drop: " + paths.length + " items");
+            var allFilePaths = [];
+            var pending = paths.length;
+
+            for (var i = 0; i < paths.length; i++) {
+                (function(p) {
+                    window.__TAURI__.core.invoke("read_path_as_files", { path: p }).then(function (filePathList) {
+                        for (var j = 0; j < filePathList.length; j++) {
+                            allFilePaths.push(filePathList[j]);
+                        }
+                        if (--pending === 0 && allFilePaths.length) indexDroppedPaths(allFilePaths);
+                    }).catch(function (err) {
+                        dbg("Scan fail: " + p + ": " + err, "dbg-err");
+                        if (--pending === 0 && allFilePaths.length) indexDroppedPaths(allFilePaths);
+                    });
+                })(paths[i]);
+            }
+        }
+
+        async function indexDroppedPaths(filePaths) {
+            var statusEl = document.getElementById("main-status");
+            var progress = document.getElementById("progress-bar");
+            var progressFill = document.getElementById("progress-fill");
+            var progressPct = document.getElementById("progress-pct");
+            var fileDropEl = document.getElementById("file-drop");
+            var btnClearAll = document.getElementById("btn-clear-all");
+
+            // Filter duplicates by filename
+            var newPaths = [];
+            for (var pi = 0; pi < filePaths.length; pi++) {
+                var n = filePaths[pi].replace(/^.*[\\\/]/, "");
+                if (!accumulatedNames[n]) newPaths.push(filePaths[pi]);
+            }
+
+            if (!newPaths.length) {
+                statusEl.innerHTML = '<span class="dim">全部重复，无新文件</span>';
+                dbg("All dropped files duplicated", "dbg-warn");
+                return;
+            }
+
+            dbg("Scanning " + newPaths.length + " new dropped files (" + allEntries.length + " existing)...");
+            fileDropEl.classList.add("has-file");
+            btnClearAll.style.display = "block";
+
+            statusEl.innerHTML = '<span class="dim">扫描中...</span>';
+            progress.style.display = "block";
+            setLoading(true, "扫描中...");
+
+            var vcmCount = 0, vsmCount = 0, genericCount = 0;
+            var globalMinZoom = (allEntries.length > 0) ? allEntries[0].header.minZoom : 99;
+            var newCount = 0, errCount = 0;
+
+            for (var idx = 0; idx < newPaths.length; idx++) {
+                var fullPath = newPaths[idx];
+                var fileName = fullPath.replace(/^.*[\\\/]/, "");
+
+                if (accumulatedNames[fileName]) continue;
+
+                var fakeFile = { name: fileName, webkitRelativePath: "", _dropPath: fullPath };
+                var type = detectType(fakeFile);
+                if (!type) continue;
+
+                try {
+                    var diskSource = new DiskSource(fullPath);
+                    var inst = new pmtiles.PMTiles(diskSource);
+                    var header = await inst.getHeader();
+                    var meta = await inst.getMetadata();
+                    var sn = type + "_" + fileName.replace(/\.(t|pmtiles)$/i, "");
+
+                    accumulatedNames[fileName] = true;
+
+                    allEntries.push({
+                        diskPath: fullPath, header: header, meta: meta,
+                        bounds: [header.minLon, header.minLat, header.maxLon, header.maxLat],
+                        sourceName: sn, type: type
+                    });
+
+                    if (header.minZoom < globalMinZoom) globalMinZoom = header.minZoom;
+                    if (type === "vcm") vcmCount++;
+                    else if (type === "vsm") vsmCount++;
+                    else genericCount++;
+                    newCount++;
+                } catch (e) {
+                    errCount++;
+                    var errMsg = (e && e.message) ? e.message : String(e || "unknown");
+                    if (errCount <= 5) dbg("Fail: " + fileName + ": " + errMsg, "dbg-err");
+                }
+
+                if (idx % 20 === 0 || idx === newPaths.length - 1) {
+                    var pct = Math.round(((idx + 1) / newPaths.length) * 100);
+                    progressFill.style.width = pct + "%";
+                    progressPct.textContent = pct + "%";
+                    statusEl.innerHTML = '<span class="dim">扫描 ' + (idx + 1) + "/" + newPaths.length + "</span>";
+                    await yieldUI();
+                }
+            }
+
+            progress.style.display = "none";
+            fileDropEl.querySelector(".drop-text").textContent = "已选择文件夹";
+            fileDropEl.querySelector(".drop-hint").textContent = allEntries.length + " 个文件";
+            statusEl.innerHTML = '<span class="ok">+' + newCount + " VCM=" + vcmCount + " VSM=" + vsmCount + (genericCount ? " Other=" + genericCount : "") +
+                (errCount ? " · " + errCount + " 失败" : "") + "</span>";
+            setLoading(false, "Ready");
+            dbg("Done: +" + newCount + " entries, total=" + allEntries.length, "dbg-ok");
+
+            var minLon = 180, minLat = 90, maxLon = -180, maxLat = -90;
+            for (var ei = 0; ei < allEntries.length; ei++) {
+                var eb = allEntries[ei].bounds;
+                if (eb[0] < minLon) minLon = eb[0];
+                if (eb[1] < minLat) minLat = eb[1];
+                if (eb[2] > maxLon) maxLon = eb[2];
+                if (eb[3] > maxLat) maxLat = eb[3];
+            }
+
+            if (minLon < maxLon) {
+                map.fitBounds([[minLon, minLat], [maxLon, maxLat]], { padding: 60, animate: false });
+                if (map.getZoom() < globalMinZoom) {
+                    dbg("Zoom " + map.getZoom().toFixed(1) + " → " + globalMinZoom, "dbg-warn");
+                    map.setZoom(globalMinZoom);
+                }
+            }
+
+            updateViewport();
+        }
+
+        /* Clear All */
+        document.getElementById("btn-clear-all").onclick = function () {
+            for (var s in loadedSources) unloadSource(s);
+            allEntries = [];
+            accumulatedFiles = [];
+            accumulatedNames = {};
+            document.getElementById("file-drop").classList.remove("has-file");
+            document.getElementById("file-drop").querySelector(".drop-text").textContent = "点击选择文件夹";
+            document.getElementById("file-drop").querySelector(".drop-hint").textContent = "支持 VCM / VSM 子目录及 .pmtiles 文件";
+            document.getElementById("main-status").innerHTML = "";
+            document.getElementById("btn-clear-all").style.display = "none";
+            document.getElementById("stat-indexed").textContent = "0";
+            document.getElementById("stat-active").textContent = "0";
+            updateViewport();
+            dbg("All files cleared", "dbg-info");
+        };
     })();
     </script>
 </body>

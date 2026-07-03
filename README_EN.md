@@ -243,7 +243,7 @@ The first build downloads and compiles Rust dependencies (Tauri + wry + tao), ta
 | File | Size | Description |
 |---|---|---|
 | `src-tauri/target/release/map-app.exe` | ~8.6 MB | Portable executable, can be run directly |
-| `src-tauri/target/release/bundle/nsis/MapViewer_0.1.0_x64-setup.exe` | ~6.7 MB | NSIS installer |
+| `src-tauri/target/release/bundle/nsis/MapViewer_0.2.0_x64-setup.exe` | ~6.7 MB | NSIS installer |
 
 ### Development Mode
 
