@@ -2,7 +2,7 @@
 
 **中文** | [English](README_EN.md)
 
-基于 Tauri 2 + MapLibre GL JS 的离线 PMTiles 地图查看器，用于加载和浏览 VCM（等高线）和 VSM（矢量地形）地图数据。
+基于 Tauri 2 + MapLibre GL JS 的离线 PMTiles 地图查看器，用于加载和浏览 VCM（等高线）、VSM（矢量地形）以及通用 `.pmtiles` 地图数据。
 
 ## 项目背景
 
@@ -10,7 +10,7 @@ VCM（等高线）和 VSM（矢量要素）地图数据来源于高驰（COROS�
 
 ## 功能需求
 
-给定一批从高驰手表提取的 `.t` 地图瓦片文件，需要一个能离线运行、批量加载、按需渲染的桌面查看器。
+给定一批从高驰手表提取的 `.t` 地图瓦片文件（或通用 `.pmtiles` 文件），需要一个能离线运行、批量加载、按需渲染的桌面查看器。
 
 核心技术栈：
 
@@ -25,7 +25,7 @@ VCM（等高线）和 VSM（矢量要素）地图数据来源于高驰（COROS�
 
 ### PMTiles V3
 
-每个 `.t` 文件本质上是一个标准的 PMTiles V3 归档文件，由五部分组成：
+每个 `.t` 或 `.pmtiles` 文件本质上是一个标准的 PMTiles V3 归档文件，由五部分组成：
 
 ```
 +--------+----------------+----------+------------------+-----------+
@@ -61,7 +61,7 @@ VSM 各图层的字段包括 `E`（数字）、`X`（字符串/名称）、`C`�
 用户选择文件夹
     │
     ▼
-遍历 .t 文件 ──→ pmtiles.FileSource(file) ──→ PMTiles.getHeader() + getMetadata()
+Scan .t / .pmtiles files ──→ pmtiles.FileSource(file) ──→ PMTiles.getHeader() + getMetadata()
     │                                                    │
     ▼                                                    ▼
 构建 allEntries[]                              读取边界框、缩放范围、图层列表
@@ -139,11 +139,12 @@ for (var i = 0; i < allEntries.length; i++) {
 
 ```javascript
 function detectType(file) {
-    var path = file.webkitRelativePath || "";
+    var path = file.webkitRelativePath || file._dropPath || "";
     if (/[/\\]VCM[/\\]/i.test(path)) return "vcm";  // 路径含 VCM 目录
     if (/[/\\]VSM[/\\]/i.test(path)) return "vsm";  // 路径含 VSM 目录
     if (/^C\d/i.test(file.name)) return "vcm";       // C 开头
     if (/^S\d/i.test(file.name)) return "vsm";       // S 开头
+    if (file.name.toLowerCase().endsWith(".pmtiles")) return "generic";  // .pmtiles 文件
     return null;
 }
 ```
@@ -177,10 +178,14 @@ map-app/
 │   ├── capabilities/
 │   │   └── default.json          # 窗口操作权限（最小化/最大化/关闭/拖拽）
 │   ├── icons/
-│   │   └── icon.ico              # 应用图标
+│   │   ├── icon.ico              # Windows 图标
+│   │   ├── icon.icns             # macOS 图标
+│   │   ├── icon.png              # 通用图标
+│   │   ├── android/              # Android 图标集（hdpi ~ xxxhdpi）
+│   │   └── ios/                  # iOS 图标集
 │   └── src/
 │       ├── main.rs               # 入口，调用 lib::run()
-│       └── lib.rs                # Tauri Builder 初始化
+│       └── lib.rs                # Tauri Builder 初始化 + Rust IPC 命令
 │
 ├── package.json                  # Node.js 依赖（仅 @tauri-apps/cli）
 └── docs/
@@ -202,8 +207,8 @@ Tauri 的 `frontendDist` 指向 `src/` 目录，`index.html` 中通过相对路�
 | 组件 | 位置 | 功能 |
 |---|---|---|
 | 自定义标题栏 | 顶部 36px | 应用名 + 拖拽区域 + 最小化/最大化/关闭按钮 |
-| 控件面板 | 左上角 | 文件夹选择（虚线拖拽区）、VCM 开关（滑动开关）、统计卡片（已索引/已加载/缩放）、进度条 |
-| 缩放显示 | 右上角 | 当前缩放级别（Z 格式，两位小数） |
+| 控件面板 | 左上角 | 文件夹选择（虚线拖拽区，支持原生拖拽）、VCM 开关、浅色/深色主题切换、统计卡片、进度条、清除所有按钮；面板可折叠 |
+| 缩放控件 | 右上角 | 统一缩放组件：缩放级别显示 + 放大/缩小按钮 + 比例尺 |
 | 属性检查 | 左下角 | 点击要素后显示属性表格，支持复制全部 |
 | 调试日志 | 右下角 | 默认隐藏，点击圆形按钮切换，错误行红色竖线标记 |
 | 状态栏 | 底部 28px | 鼠标坐标、当前瓦片 z/x/y、加载状态指示灯 |
@@ -269,7 +274,7 @@ panic = "abort"     # panic 时直接终止，减小二进制体积
 
 地图数据存储在 COROS 手表内部存储的 `map` 文件夹中，内含 `VCM` 和 `VSM` 两个子目录。将整个 `map` 文件夹复制到电脑后，通过本程序选择该文件夹即可加载浏览。
 
-> 注意：地图数据文件体积较大（约 6 GB），未包含在本仓库中，请自行从手表提取。
+> 注意：地图数据文件体积较大（约 6 GB），未包含在本仓库中，请自行从手表提取。v0.2.0 起也支持通用 `.pmtiles` 格式文件。
 
 ## 数据目录结构
 
@@ -295,7 +300,7 @@ Map/
 
 **方式 2：直接选择 VCM 或 VSM 文件夹**
 
-程序会自动扫描所有 `.t` 文件，根据路径中的 `VCM`/`VSM` 或文件名前缀 `C`/`S` 自动分类。
+程序会自动扫描所有 `.t` 和 `.pmtiles` 文件，根据路径中的 `VCM`/`VSM`、文件名前缀 `C`/`S` 或 `.pmtiles` 后缀自动分类。
 
 ## 依赖
 
