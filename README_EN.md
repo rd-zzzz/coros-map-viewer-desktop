@@ -2,7 +2,7 @@
 
 [中文](README.md) | **English**
 
-An offline PMTiles map viewer built on Tauri 2 + MapLibre GL JS for loading and browsing VCM (contour lines) and VSM (vector terrain) map data.
+An offline PMTiles map viewer built on Tauri 2 + MapLibre GL JS for loading and browsing VCM (contour lines), VSM (vector terrain), and generic `.pmtiles` map data.
 
 ## Background
 
@@ -10,7 +10,7 @@ VCM (contour) and VSM (vector feature) map data originate from the offline map p
 
 ## Requirements
 
-Given a batch of `.t` map tile files extracted from a COROS watch, build a desktop viewer that can run fully offline, load tiles in batch, and render on demand.
+Given a batch of `.t` map tile files extracted from a COROS watch (or generic `.pmtiles` files), build a desktop viewer that can run fully offline, load tiles in batch, and render on demand.
 
 Core technology stack:
 
@@ -25,7 +25,7 @@ Core technology stack:
 
 ### PMTiles V3
 
-Each `.t` file is essentially a standard PMTiles V3 archive, consisting of five sections:
+Each `.t` or `.pmtiles` file is essentially a standard PMTiles V3 archive, consisting of five sections:
 
 ```
 +--------+----------------+----------+------------------+-----------+
@@ -61,7 +61,7 @@ VSM layer fields include `E` (numeric), `X` (string/name), `C`, `N`, `b`, `i`, `
 User selects folder
     │
     ▼
-Scan .t files ──→ pmtiles.FileSource(file) ──→ PMTiles.getHeader() + getMetadata()
+Scan .t / .pmtiles files ──→ pmtiles.FileSource(file) ──→ PMTiles.getHeader() + getMetadata()
     │                                                    │
     ▼                                                    ▼
 Build allEntries[]                              Read bounds, zoom range, layer list
@@ -140,11 +140,12 @@ Determined by both file path and file name:
 
 ```javascript
 function detectType(file) {
-    var path = file.webkitRelativePath || "";
+    var path = file.webkitRelativePath || file._dropPath || "";
     if (/[/\\]VCM[/\\]/i.test(path)) return "vcm";  // Path contains VCM directory
     if (/[/\\]VSM[/\\]/i.test(path)) return "vsm";  // Path contains VSM directory
     if (/^C\d/i.test(file.name)) return "vcm";       // Starts with C
     if (/^S\d/i.test(file.name)) return "vsm";       // Starts with S
+    if (file.name.toLowerCase().endsWith(".pmtiles")) return "generic";  // .pmtiles file
     return null;
 }
 ```
@@ -178,10 +179,14 @@ map-app/
 │   ├── capabilities/
 │   │   └── default.json          # Window operation permissions (minimize/maximize/close/drag)
 │   ├── icons/
-│   │   └── icon.ico              # Application icon
+│   │   ├── icon.ico              # Windows icon
+│   │   ├── icon.icns             # macOS icon
+│   │   ├── icon.png              # Generic icon
+│   │   ├── android/              # Android icon set (hdpi ~ xxxhdpi)
+│   │   └── ios/                  # iOS icon set
 │   └── src/
 │       ├── main.rs               # Entry point, calls lib::run()
-│       └── lib.rs                # Tauri Builder initialization
+│       └── lib.rs                # Tauri Builder initialization + Rust IPC commands
 │
 ├── package.json                  # Node.js dependencies (only @tauri-apps/cli)
 └── docs/
@@ -203,8 +208,8 @@ All external CDN dependencies have been localized:
 | Component | Position | Function |
 |---|---|---|
 | Custom title bar | Top 36px | App name + drag area + minimize/maximize/close buttons |
-| Control panel | Top-left | Folder selection (dashed drag area), VCM toggle (sliding switch), statistics cards (indexed/loaded/zoom), progress bar |
-| Zoom display | Top-right | Current zoom level (Z format, two decimal places) |
+| Control panel | Top-left | Folder selection (dashed drag area, supports native drag-drop), VCM toggle, light/dark theme toggle, statistics cards, progress bar, clear all button; panel is collapsible |
+| Zoom widget | Top-right | Unified zoom component: zoom level display + zoom in/out buttons + scale bar |
 | Attribute inspector | Bottom-left | Attribute table shown on feature click, supports copy-all |
 | Debug log | Bottom-right | Hidden by default, toggled via circular button, error lines marked with red left border |
 | Status bar | Bottom 28px | Mouse coordinates, current tile z/x/y, loading status indicator |
@@ -270,7 +275,7 @@ panic = "abort"     # Abort on panic, reducing binary size
 
 The map data is stored in the `map` folder on the internal storage of a COROS watch, containing two subdirectories: `VCM` and `VSM`. Copy the entire `map` folder to your computer, then select it in the application to load and browse the maps.
 
-> Note: The map data files are large (approximately 6 GB) and are not included in this repository. Please extract them from your watch directly.
+> Note: The map data files are large (approximately 6 GB) and are not included in this repository. Please extract them from your watch directly. As of v0.2.0, generic `.pmtiles` format files are also supported.
 
 ## Data Directory Structure
 
@@ -296,7 +301,7 @@ Map/
 
 **Method 2: Directly select the VCM or VSM folder**
 
-The program automatically scans all `.t` files and classifies them based on `VCM`/`VSM` in the path or `C`/`S` file name prefix.
+The program automatically scans all `.t` and `.pmtiles` files and classifies them based on `VCM`/`VSM` in the path, `C`/`S` file name prefix, or `.pmtiles` extension.
 
 ## Dependencies
 
