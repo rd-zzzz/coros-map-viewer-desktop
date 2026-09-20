@@ -49,7 +49,6 @@ map viewer/
 │   └── src/
 │       ├── main.rs               # 入口，调用 lib::run()
 │       └── lib.rs                # Tauri Builder + IPC 命令实现
-├── docs/                         # 设计与方案文档
 ├── package.json                  # 仅依赖 @tauri-apps/cli
 ├── README.md / README_EN.md      # 中文 / 英文说明（须同步维护）
 └── AGENTS.md                     # 本文件
@@ -113,7 +112,7 @@ npx tauri build      # 发布构建，产出 exe 与 NSIS 安装包
 
 ## 文档与 Git 约定
 
-- 修改功能或架构时，**`README.md`（中文）与 `README_EN.md`（英文）必须同步更新**；方案类文档放入 `docs/`。
+- 修改功能或架构时，**`README.md`（中文）与 `README_EN.md`（英文）必须同步更新**。
 - 提交信息使用 Conventional Commits 风格的英文前缀：`feat` / `fix` / `docs` / `refactor` / `init` 等，后接简短英文描述。
 - 远程仓库：`origin` → `https://github.com/rd-zzzz/coros-map-viewer-desktop`，主分支为 `main`。
 - `node_modules/`、`src-tauri/target/` 以及地图数据文件（`.t` / `.pmtiles`，体积约 6 GB）不得提交。

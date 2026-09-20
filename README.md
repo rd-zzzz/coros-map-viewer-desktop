@@ -221,9 +221,7 @@ map-app/
 │       ├── main.rs               # 入口，调用 lib::run()
 │       └── lib.rs                # Tauri Builder 初始化 + Rust IPC 命令
 │
-├── package.json                  # Node.js 依赖（仅 @tauri-apps/cli）
-└── docs/
-    └── ui-beautification-plan.md # UI 美化方案文档
+└── package.json                  # Node.js 依赖（仅 @tauri-apps/cli）
 ```
 
 ### 为什么前端是单文件

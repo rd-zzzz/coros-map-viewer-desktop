@@ -223,9 +223,7 @@ map-app/
 │       ├── main.rs               # Entry point, calls lib::run()
 │       └── lib.rs                # Tauri Builder initialization + Rust IPC commands
 │
-├── package.json                  # Node.js dependencies (only @tauri-apps/cli)
-└── docs/
-    └── ui-beautification-plan.md # UI beautification plan document
+└── package.json                  # Node.js dependencies (only @tauri-apps/cli)
 ```
 
 ### Why a Single-File Frontend
