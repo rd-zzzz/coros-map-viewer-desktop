@@ -684,7 +684,7 @@
         function dbg(msg, cls) {
             var ts = new Date().toLocaleTimeString();
             var errLine = cls === "dbg-err" ? " dbg-err-line" : (cls === "dbg-warn" ? " dbg-warn-line" : "");
-            debugLines.push('<div class="dbg-line' + errLine + '"><span class="dbg-ts">[' + ts + "]</span><span class=\"" + (cls || "dbg-info") + "\">" + msg + "</span></div>");
+            debugLines.push('<div class="dbg-line' + errLine + '"><span class="dbg-ts">[' + ts + "]</span><span class=\"" + (cls || "dbg-info") + "\">" + escapeHtml(msg) + "</span></div>");
             if (debugLines.length > 80) debugLines.shift();
             debugContent.innerHTML = debugLines.join("");
             debugContent.scrollTop = debugContent.scrollHeight;
@@ -808,6 +808,41 @@
             return a[0] <= b[2] && a[2] >= b[0] && a[1] <= b[3] && a[3] >= b[1];
         }
 
+        // S1: 所有写入 innerHTML 的动态文本必须经此转义，防止不可信 PMTiles 属性注入脚本
+        function escapeHtml(s) {
+            return String(s == null ? "" : s)
+                .replace(/&/g, "&amp;")
+                .replace(/</g, "&lt;")
+                .replace(/>/g, "&gt;")
+                .replace(/"/g, "&quot;")
+                .replace(/'/g, "&#39;");
+        }
+
+        // O1: 两个包围盒的相交面积，用于按覆盖视口大小排序源
+        function intersectArea(a, b) {
+            var w = Math.min(a[2], b[2]) - Math.max(a[0], b[0]);
+            var h = Math.min(a[3], b[3]) - Math.max(a[1], b[1]);
+            return (w > 0 && h > 0) ? w * h : 0;
+        }
+
+        // O5: 复制文本，navigator.clipboard 不可用时回退到 execCommand
+        function copyText(text) {
+            if (navigator.clipboard && navigator.clipboard.writeText) {
+                return navigator.clipboard.writeText(text);
+            }
+            var ta = document.createElement("textarea");
+            ta.value = text;
+            ta.style.position = "fixed";
+            ta.style.opacity = "0";
+            document.body.appendChild(ta);
+            ta.focus();
+            ta.select();
+            var ok = false;
+            try { ok = document.execCommand("copy"); } catch (e) { ok = false; }
+            document.body.removeChild(ta);
+            return Promise.resolve(ok);
+        }
+
         function colorForIndex(i) {
             return "hsl(" + Math.round((i * 137.508) % 360) + ", 65%, 58%)";
         }
@@ -850,11 +885,27 @@
             var inst = new pmtiles.PMTiles(source);
             protocol.add(inst);
             var key = inst.source.getKey();
-            map.addSource(sn, { type: "vector", url: "pmtiles://" + key });
 
             var vl = (entry.meta && entry.meta.vector_layers) ? entry.meta.vector_layers : [];
             var isVCM = entry.type === "vcm";
             var layerIds = [];
+
+            // H2: promoteId 让 MVT 要素获得数字 id，feature-state hover 才能生效。
+            // VCM 用高程字段 F；VSM/generic 各 source-layer 用数字字段 E（缺失则 id 为空，无副作用）。
+            var promoteId = null;
+            if (isVCM) {
+                promoteId = "F";
+            } else {
+                var pidMap = {};
+                for (var pp = 0; pp < vl.length; pp++) pidMap[vl[pp].id] = "E";
+                promoteId = pidMap;
+            }
+
+            // H1: 整体包在 try 内，中途失败就地清理已建图层/源/协议，避免孤儿资源。
+            var sourceAdded = false;
+            try {
+                map.addSource(sn, { type: "vector", url: "pmtiles://" + key, promoteId: promoteId });
+                sourceAdded = true;
 
             for (var i = 0; i < vl.length; i++) {
                 (function (idx) {
@@ -903,7 +954,17 @@
                 })(i);
             }
 
-            loadedSources[sn] = { ids: layerIds, type: entry.type, key: key };
+                loadedSources[sn] = { ids: layerIds, type: entry.type, key: key };
+            } catch (e) {
+                // H1: 加载中途失败，移除已建图层后再删 source（顺序不能反），并回收协议实例
+                for (var ci2 = 0; ci2 < layerIds.length; ci2++) {
+                    try { if (map.getLayer(layerIds[ci2])) map.removeLayer(layerIds[ci2]); } catch (ce) {}
+                }
+                if (sourceAdded) { try { if (map.getSource(sn)) map.removeSource(sn); } catch (ce2) {} }
+                try { protocol.remove(key); } catch (ce3) {}
+                delete loadedSources[sn];
+                throw e;
+            }
         }
 
         function unloadSource(sn) {
@@ -921,8 +982,15 @@
         /* ============================================================
            Viewport
         ============================================================ */
+        var vpRetries = 0;
         function updateViewport() {
-            if (!allEntries.length || !map.isStyleLoaded()) return;
+            if (!allEntries.length) return;
+            // O6: 样式未就绪时短暂重试若干次，而非直接放弃
+            if (!map.isStyleLoaded()) {
+                if (vpRetries < 10) { vpRetries++; setTimeout(updateViewport, 200); }
+                return;
+            }
+            vpRetries = 0;
 
             var z = map.getZoom();
             var b = map.getBounds();
@@ -938,11 +1006,9 @@
                 }
             }
 
-            var cx = (vp[0] + vp[2]) / 2, cy = (vp[1] + vp[3]) / 2;
+            // O1: 按与视口的相交面积降序，优先保证大面积覆盖视口的源，避免视口内出现空白
             candidates.sort(function (a, b) {
-                var ax = (a.bounds[0] + a.bounds[2]) / 2, ay = (a.bounds[1] + a.bounds[3]) / 2;
-                var bx = (b.bounds[0] + b.bounds[2]) / 2, by = (b.bounds[1] + b.bounds[3]) / 2;
-                return ((ax - cx) * (ax - cx) + (ay - cy) * (ay - cy)) - ((bx - cx) * (bx - cx) + (by - cy) * (by - cy));
+                return intersectArea(b.bounds, pv) - intersectArea(a.bounds, pv);
             });
             if (candidates.length > MAX_ACTIVE_SOURCES) candidates.length = MAX_ACTIVE_SOURCES;
 
@@ -993,7 +1059,9 @@
             var totalNew = 0;
             for (var fi = 0; fi < files.length; fi++) {
                 var fn = files[fi].name.toLowerCase();
-                if ((fn.endsWith(".t") || fn.endsWith(".pmtiles")) && !accumulatedNames[files[fi].name]) totalNew++;
+                var fkey = files[fi].webkitRelativePath || files[fi].name;
+                // M1+O2: 与主循环口径一致；按相对路径去重，detectType 无法识别不计入，避免进度卡在 <100%
+                if ((fn.endsWith(".t") || fn.endsWith(".pmtiles")) && !accumulatedNames[fkey] && detectType(files[fi])) totalNew++;
             }
 
             if (!totalNew) {
@@ -1020,7 +1088,8 @@
             for (var idx = 0; idx < files.length; idx++) {
                 var file = files[idx];
                 if (!file.name.toLowerCase().endsWith(".t") && !file.name.toLowerCase().endsWith(".pmtiles")) continue;
-                if (accumulatedNames[file.name]) { skipCount++; continue; }
+                var fileKey = file.webkitRelativePath || file.name;
+                if (accumulatedNames[fileKey]) { skipCount++; continue; }
 
                 var type = detectType(file);
                 if (!type) continue;
@@ -1032,7 +1101,7 @@
                     var sn = type + "_" + file.name.replace(/\.(t|pmtiles)$/i, "");
 
                     accumulatedFiles.push(file);
-                    accumulatedNames[file.name] = true;
+                    accumulatedNames[fileKey] = true;
 
                     allEntries.push({
                         file: file, header: header, meta: meta,
@@ -1132,11 +1201,13 @@
            Events
         ============================================================ */
         var moveTimer;
-        map.on("moveend", function () {
+        // M3: moveend 与 zoomend 共用同一 debounce，一次缩放只触发一次视口更新
+        function scheduleViewport() {
             clearTimeout(moveTimer);
             moveTimer = setTimeout(updateViewport, 200);
-        });
-        map.on("zoomend", function () { clearTimeout(moveTimer); updateViewport(); });
+        }
+        map.on("moveend", scheduleViewport);
+        map.on("zoomend", scheduleViewport);
 
         /* Info Panel */
         var infoPanel = document.getElementById("info-panel");
@@ -1148,27 +1219,33 @@
         map.on("click", function (e) {
             var features = map.queryRenderedFeatures(e.point);
             if (!features.length) { infoPanel.style.display = "none"; return; }
+            // O4: 优先展示线/点/标注要素，避免半透明 fill 在点击时盖住更具体的要素
             var f = features[0];
-            var rows = '<tr><td>source</td><td>' + f.source + "</td></tr>" +
-                '<tr><td>layer</td><td>' + (f.sourceLayer || "-") + "</td></tr>" +
-                '<tr><td>type</td><td>' + f.geometry.type + "</td></tr>";
+            for (var fi2 = 0; fi2 < features.length; fi2++) {
+                var lid2 = (features[fi2].layer && features[fi2].layer.id) ? features[fi2].layer.id : "";
+                if (lid2.indexOf("_fill") !== lid2.length - 5) { f = features[fi2]; break; }
+            }
+            var rows = '<tr><td>source</td><td>' + escapeHtml(f.source) + "</td></tr>" +
+                '<tr><td>layer</td><td>' + escapeHtml(f.sourceLayer || "-") + "</td></tr>" +
+                '<tr><td>type</td><td>' + escapeHtml(f.geometry.type) + "</td></tr>";
             var keys = Object.keys(f.properties);
             lastProps = "";
             for (var i = 0; i < keys.length; i++) {
-                rows += '<tr><td>' + keys[i] + "</td><td>" + f.properties[keys[i]] + "</td></tr>";
-                lastProps += keys[i] + ": " + f.properties[keys[i]] + "\n";
+                var pv = f.properties[keys[i]];
+                rows += '<tr><td>' + escapeHtml(keys[i]) + "</td><td>" + escapeHtml(pv) + "</td></tr>";
+                lastProps += keys[i] + ": " + pv + "\n";
             }
             infoTable.innerHTML = rows;
             infoPanel.style.display = "block";
         });
 
         document.getElementById("btn-copy-props").onclick = function () {
-            if (lastProps && navigator.clipboard) {
-                navigator.clipboard.writeText(lastProps);
-                var btn = document.getElementById("btn-copy-props");
-                btn.textContent = "已复制";
+            if (!lastProps) return;
+            var btn = document.getElementById("btn-copy-props");
+            copyText(lastProps).then(function (ok) {
+                btn.textContent = ok === false ? "复制失败" : "已复制";
                 setTimeout(function () { btn.textContent = "复制全部"; }, 1200);
-            }
+            });
         };
 
         /* Hover */
@@ -1241,11 +1318,13 @@
             var fileDropEl = document.getElementById("file-drop");
             var btnClearAll = document.getElementById("btn-clear-all");
 
-            // Filter duplicates by filename
+            // H3: 记录入口是否为空，仅首次加载才调整视图，避免追加文件时重置用户视野
+            var wasEmpty = allEntries.length === 0;
+
+            // O2: 按完整路径去重（同名不同目录不再误判为重复）
             var newPaths = [];
             for (var pi = 0; pi < filePaths.length; pi++) {
-                var n = filePaths[pi].replace(/^.*[\\\/]/, "");
-                if (!accumulatedNames[n]) newPaths.push(filePaths[pi]);
+                if (!accumulatedNames[filePaths[pi]]) newPaths.push(filePaths[pi]);
             }
 
             if (!newPaths.length) {
@@ -1263,14 +1342,14 @@
             setLoading(true, "扫描中...");
 
             var vcmCount = 0, vsmCount = 0, genericCount = 0;
-            var globalMinZoom = (allEntries.length > 0) ? allEntries[0].header.minZoom : 99;
+            var globalMinZoom = 99;
             var newCount = 0, errCount = 0;
 
             for (var idx = 0; idx < newPaths.length; idx++) {
                 var fullPath = newPaths[idx];
                 var fileName = fullPath.replace(/^.*[\\\/]/, "");
 
-                if (accumulatedNames[fileName]) continue;
+                if (accumulatedNames[fullPath]) continue;
 
                 var fakeFile = { name: fileName, webkitRelativePath: "", _dropPath: fullPath };
                 var type = detectType(fakeFile);
@@ -1283,7 +1362,7 @@
                     var meta = await inst.getMetadata();
                     var sn = type + "_" + fileName.replace(/\.(t|pmtiles)$/i, "");
 
-                    accumulatedNames[fileName] = true;
+                    accumulatedNames[fullPath] = true;
 
                     allEntries.push({
                         diskPath: fullPath, header: header, meta: meta,
@@ -1319,20 +1398,22 @@
             setLoading(false, "Ready");
             dbg("Done: +" + newCount + " entries, total=" + allEntries.length, "dbg-ok");
 
-            var minLon = 180, minLat = 90, maxLon = -180, maxLat = -90;
-            for (var ei = 0; ei < allEntries.length; ei++) {
-                var eb = allEntries[ei].bounds;
-                if (eb[0] < minLon) minLon = eb[0];
-                if (eb[1] < minLat) minLat = eb[1];
-                if (eb[2] > maxLon) maxLon = eb[2];
-                if (eb[3] > maxLat) maxLat = eb[3];
-            }
+            if (wasEmpty) {
+                var minLon = 180, minLat = 90, maxLon = -180, maxLat = -90;
+                for (var ei = 0; ei < allEntries.length; ei++) {
+                    var eb = allEntries[ei].bounds;
+                    if (eb[0] < minLon) minLon = eb[0];
+                    if (eb[1] < minLat) minLat = eb[1];
+                    if (eb[2] > maxLon) maxLon = eb[2];
+                    if (eb[3] > maxLat) maxLat = eb[3];
+                }
 
-            if (minLon < maxLon) {
-                map.fitBounds([[minLon, minLat], [maxLon, maxLat]], { padding: 60, animate: false });
-                if (map.getZoom() < globalMinZoom) {
-                    dbg("Zoom " + map.getZoom().toFixed(1) + " → " + globalMinZoom, "dbg-warn");
-                    map.setZoom(globalMinZoom);
+                if (minLon < maxLon) {
+                    map.fitBounds([[minLon, minLat], [maxLon, maxLat]], { padding: 60, animate: false });
+                    if (map.getZoom() < globalMinZoom) {
+                        dbg("Zoom " + map.getZoom().toFixed(1) + " → " + globalMinZoom, "dbg-warn");
+                        map.setZoom(globalMinZoom);
+                    }
                 }
             }
 

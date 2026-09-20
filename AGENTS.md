@@ -18,6 +18,7 @@ MapViewer 是一个基于 **Tauri 2 + MapLibre GL JS** 的**完全离线**桌面
 3. **前端保持 ES5 风格**：统一使用 `var`、`function` 声明、字符串 `+` 拼接、`Promise.then`；**不要**使用 `let` / `const`、箭头函数、模板字符串、ES 模块、`async` 语法糖（现有代码刻意保持这一风格）。
 4. **单文件内聚**：HTML、CSS、JavaScript 全部位于 `src/index.html`，以 `/* ============ Section Name ============ */` 注释块分节。新增代码应归入对应分节，并保持该节的缩进与命名风格（`<script>` 内为 8 空格缩进，CSS 为 4 空格）。
 5. **改动必须实测**：前端逻辑改动通过 `npx tauri dev` 在真实 WebView 中验证；语法通过不等于功能正确。
+6. **动态文本必须转义**：任何写入 `innerHTML` 的动态内容（PMTiles 属性、路径、文件名等）必须先经 `escapeHtml()`；CSP 已在 `tauri.conf.json` 启用，不得回退为 `null`，也不要为图省事把 `'unsafe-inline'` 加入 `script-src`。
 
 ## 技术栈
 
@@ -71,7 +72,6 @@ PMTiles JS 的 Source 只需实现 `getKey()` 与 `getBytes(offset, length)`。�
 
 - `read_path_as_files(path)`：文件则校验后缀直接返回；文件夹则递归扫描，返回所有 `.t` / `.pmtiles` 的完整路径。
 - `read_file_slice(path, offset, length)`：读取指定字节范围（自动 clamp 到文件长度），是 PMTiles Range 请求的实际执行者。
-- `read_file_bytes(path)`：读取整个文件（预留命令，当前前端未调用）。
 
 新增或修改 IPC 命令时必须同时：① 在 `tauri::generate_handler!` 中注册；② 如涉及新的核心权限，更新 `capabilities/default.json`；③ 在前端通过 `window.__TAURI__.core.invoke(...)` 调用。
 
@@ -79,8 +79,9 @@ PMTiles JS 的 Source 只需实现 `getKey()` 与 `getBytes(offset, length)`。�
 
 - **索引阶段**：遍历文件，仅读取 Header 与 Metadata 存入 `allEntries[]`，不加入地图。
 - **筛选阶段**：`moveend` / `zoomend` 时计算视口 + padding 的边界框，与每个 entry 的 bounds 做相交判断，并按 `minZoom` 过滤。
-- **排序与限流**：候选源按边界中心到视口中心的距离排序，最多激活 `MAX_ACTIVE_SOURCES`（24）个。
-- **加载 / 卸载**：`loadEntry()` 注册协议实例、添加 source 与 layers；`unloadSource()` 反向移除，避免资源泄漏。
+- **排序与限流**：候选源按 bounds 与视口的**相交面积降序**排序（优先保证大面积覆盖视口的源），最多激活 `MAX_ACTIVE_SOURCES`（24）个。
+- **加载 / 卸载**：`loadEntry()` 整体包在 try 内，注册协议实例、添加 source 与 layers；若中途失败必须就地按"先删图层、再删 source、最后移除协议"清理后再抛出，避免孤儿资源。`unloadSource()` 反向移除。
+- **首次定位**：两条索引通道都只在 `allEntries` 入口为空（`wasEmpty`）时才 `fitBounds`，追加文件不得重置用户当前视野。
 
 ### 4. 渲染策略
 

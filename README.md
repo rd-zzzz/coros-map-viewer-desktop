@@ -74,7 +74,7 @@ fitBounds() ──→ 强制 minZoom ──→ updateViewport()
                                         │
                                         ▼
                               筛选与视口相交的 entries
-                              按距离中心排序，取前 24 个
+                              按与视口相交面积排序，取前 24 个
                                         │
                                         ▼
                          ┌────────────────┼────────────────┐
@@ -122,13 +122,12 @@ DiskSource.prototype.getBytes = function (offset, length) {
 };
 ```
 
-Rust 后端（`src-tauri/src/lib.rs`）暴露三个 IPC 命令：
+Rust 后端（`src-tauri/src/lib.rs`）暴露两个 IPC 命令：
 
 | 命令 | 功能 |
 |---|---|
 | `read_path_as_files` | 接收文件或文件夹路径；文件夹则递归扫描，返回其中所有 `.t`/`.pmtiles` 的完整路径 |
 | `read_file_slice` | 按 offset/length 读取文件的指定字节范围，是 PMTiles Range 请求的实际执行者 |
-| `read_file_bytes` | 读取整个文件的字节（预留命令，当前前端未调用） |
 
 原生拖拽时，前端先调用 `read_path_as_files` 在 Rust 端完成目录扫描（不经过浏览器的目录上传机制），再为每个路径创建 `DiskSource` 进行索引。这样即使面对约 6 GB 地图数据，WebView 内存中也只保存瓦片索引而非文件内容。
 
@@ -138,7 +137,7 @@ Rust 后端（`src-tauri/src/lib.rs`）暴露三个 IPC 命令：
 
 1. **索引阶段**：遍历所有 `.t` 文件，读取 Header 和 Metadata，存入 `allEntries[]`（不加载到地图）
 2. **视口筛选**：每次 `moveend`/`zoomend` 时，计算当前视口 + padding 的边界框，与每个 entry 的 bounds 做相交判断
-3. **距离排序**：按瓦片边界中心到视口中心的距离排序，取最近的 `MAX_ACTIVE_SOURCES`（24）个
+3. **面积排序**：按瓦片 bounds 与视口的相交面积降序排序，优先保证大面积覆盖视口的源，取前 `MAX_ACTIVE_SOURCES`（24）个
 4. **加载/卸载**：新进入视口的 entry 调用 `loadEntry()`（注册协议 + 添加源 + 添加图层），移出视口的调用 `unloadSource()`（移除图层 + 移除源）
 5. **缩放过滤**：跳过 `minZoom > 当前缩放 + 1` 的 entry，避免加载当前级别无瓦片的源
 

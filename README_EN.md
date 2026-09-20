@@ -74,7 +74,7 @@ fitBounds() ──→ Force minZoom ──→ updateViewport()
                                         │
                                         ▼
                               Filter entries intersecting viewport
-                              Sort by distance to center, take top 24
+                              Sort by intersection area with viewport, take top 24
                                         │
                                         ▼
                          ┌────────────────┼────────────────┐
@@ -124,13 +124,12 @@ DiskSource.prototype.getBytes = function (offset, length) {
 };
 ```
 
-The Rust backend (`src-tauri/src/lib.rs`) exposes three IPC commands:
+The Rust backend (`src-tauri/src/lib.rs`) exposes two IPC commands:
 
 | Command | Function |
 |---|---|
 | `read_path_as_files` | Accepts a file or folder path; recursively scans folders and returns the full paths of all `.t`/`.pmtiles` files within |
 | `read_file_slice` | Reads a specified byte range of a file by offset/length; the actual executor of PMTiles Range requests |
-| `read_file_bytes` | Reads the bytes of an entire file (reserved command; currently not called by the frontend) |
 
 On native drag-drop, the frontend first calls `read_path_as_files` to scan directories on the Rust side (bypassing the browser's folder-upload mechanism), then creates a `DiskSource` for each path to build the index. Even with roughly 6 GB of map data, only the tile index — not file contents — resides in WebView memory.
 
@@ -140,7 +139,7 @@ With hundreds of tile files, loading them all into MapLibre at once is impractic
 
 1. **Indexing phase**: Scan all `.t` files, read Header and Metadata, store into `allEntries[]` (not loaded to the map)
 2. **Viewport filtering**: On each `moveend`/`zoomend`, compute the bounding box of the current viewport + padding, perform intersection test against each entry's bounds
-3. **Distance sorting**: Sort by the distance from each tile's bounding box center to the viewport center, take the nearest `MAX_ACTIVE_SOURCES` (24) entries
+3. **Area sorting**: Sort by the intersection area between each tile's bounds and the viewport in descending order, prioritizing sources that cover a large part of the viewport, take the top `MAX_ACTIVE_SOURCES` (24) entries
 4. **Load/Unload**: Entries newly entering the viewport call `loadEntry()` (register protocol + add source + add layer); entries leaving the viewport call `unloadSource()` (remove layer + remove source)
 5. **Zoom filtering**: Skip entries where `minZoom > currentZoom + 1` to avoid loading sources that have no tiles at the current level
 

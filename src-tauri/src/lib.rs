@@ -1,10 +1,7 @@
 use std::fs;
 use std::path::PathBuf;
 
-#[tauri::command]
-fn read_file_bytes(path: String) -> Result<Vec<u8>, String> {
-    fs::read(&path).map_err(|e| format!("Failed to read {}: {}", path, e))
-}
+// O3: read_file_bytes 已移除——前端从不调用，按需切片由 read_file_slice 承担。
 
 #[tauri::command]
 fn read_path_as_files(path: String) -> Result<Vec<String>, String> {
@@ -46,14 +43,19 @@ fn scan_dir(dir: &PathBuf, out: &mut Vec<String>) -> Result<(), String> {
     let entries = fs::read_dir(dir).map_err(|e| format!("read_dir {:?}: {}", dir, e))?;
     for entry in entries {
         let entry = entry.map_err(|e| format!("entry error: {}", e))?;
+        // M4: file_type() 不跟随符号链接，跳过 symlink/junction，防止链接指回祖先造成无限递归
+        let ft = entry.file_type().map_err(|e| format!("file_type error: {}", e))?;
+        if ft.is_symlink() {
+            continue;
+        }
         let p = entry.path();
-        if p.is_file() {
+        if ft.is_file() {
             let name = p.file_name().and_then(|n| n.to_str()).unwrap_or("");
             let lower = name.to_lowercase();
             if lower.ends_with(".t") || lower.ends_with(".pmtiles") {
                 out.push(p.to_string_lossy().to_string());
             }
-        } else if p.is_dir() {
+        } else if ft.is_dir() {
             scan_dir(&p, out)?;
         }
     }
@@ -64,7 +66,6 @@ fn scan_dir(dir: &PathBuf, out: &mut Vec<String>) -> Result<(), String> {
 pub fn run() {
     tauri::Builder::default()
         .invoke_handler(tauri::generate_handler![
-            read_file_bytes,
             read_path_as_files,
             read_file_slice
         ])
