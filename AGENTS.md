@@ -82,11 +82,13 @@ PMTiles JS 的 Source 只需实现 `getKey()` 与 `getBytes(offset, length)`。�
 - **排序与限流**：候选源按 bounds 与视口的**相交面积降序**排序（优先保证大面积覆盖视口的源），最多激活 `MAX_ACTIVE_SOURCES`（24）个。
 - **加载 / 卸载**：`loadEntry()` 整体包在 try 内，注册协议实例、添加 source 与 layers；若中途失败必须就地按"先删图层、再删 source、最后移除协议"清理后再抛出，避免孤儿资源。`unloadSource()` 反向移除。
 - **首次定位**：两条索引通道都只在 `allEntries` 入口为空（`wasEmpty`）时才 `fitBounds`，追加文件不得重置用户当前视野。
+- **样式未就绪重试**：`updateViewport()` 在 `!map.isStyleLoaded()` 时最多重试 10 次（间隔 200ms）。计数器 `vpRetries` 只在**确实排入了一次重试**时自增，且用 `vpRetryTimer` 保证同一时刻只有一个待执行重试——否则鼠标移动会经 file-drop 的透明 `<input>` 高频触发本函数，把预算在一次样式切换内烧光，导致视口刷新永久丢失。
 
 ### 4. 渲染策略
 
-- **VCM**：每个 `vector_layer` 只创建 `line` 图层，颜色按图层索引的黄金角色相分配 `(i * 137.508) % 360`，线宽随 zoom 插值。
+- **VCM**：每个 `vector_layer` 只创建 `line` 图层，颜色按图层索引的黄金角色相分配 `(i * 137.508) % 360`，线宽随 zoom 插值；hover 时线宽加粗、不透明度提升。
 - **VSM / generic**：依据 Metadata 中的 `vector_layers`，按几何类型创建 `fill`（Polygon）、`line`（LineString 与 Polygon 描边）、`circle`（Point）、`symbol`（文字标注）图层。
+- **要素 id（`promoteId`）**：hover 的 `feature-state` 依赖要素 id。VCM 提升高程字段 `F`；VSM / generic 为每个 source-layer 提升数字字段 `E`（字段缺失时 id 为空，无副作用）。
 - **类型识别 `detectType`**：优先匹配路径中的 `VCM` / `VSM` 目录，其次匹配文件名 `C` / `S` 前缀，最后按 `.pmtiles` 后缀归为 generic。
 
 ### 5. 自定义窗口

@@ -914,8 +914,14 @@
                     var pfx = sn + "_" + lid;
 
                     if (isVCM) {
+                        // H2: VCM 线图层同样接 feature-state，hover 时加粗并提亮，与 VSM 行为一致。
+                        // 依赖上方 promoteId="F" 提供的要素 id；无 id 的要素不受影响。
                         map.addLayer({ id: pfx + "_line", source: sn, "source-layer": lid, type: "line",
-                            paint: { "line-color": c, "line-width": ["interpolate", ["linear"], ["zoom"], 9, 0.5, 14, 2] } });
+                            paint: { "line-color": c,
+                                "line-width": ["case", ["boolean", ["feature-state", "hover"], false],
+                                    ["interpolate", ["linear"], ["zoom"], 9, 1.5, 14, 4],
+                                    ["interpolate", ["linear"], ["zoom"], 9, 0.5, 14, 2]],
+                                "line-opacity": ["case", ["boolean", ["feature-state", "hover"], false], 1, 0.85] } });
                         layerIds.push(pfx + "_line");
                     } else {
                         map.addLayer({ id: pfx + "_fill", source: sn, "source-layer": lid, type: "fill",
@@ -982,15 +988,25 @@
         /* ============================================================
            Viewport
         ============================================================ */
+        // O6: 样式未就绪时的重试。计数器只在「本次调用确实发起了一次重试」时自增，
+        // 且每个调度批次独立计数——避免高频调用（file-drop 的透明 input 覆盖整个投放区，
+        // 鼠标移动会持续触发）把 10 次预算在一次样式切换内烧光，导致视口刷新永久丢失。
         var vpRetries = 0;
+        var vpRetryTimer = null;
         function updateViewport() {
             if (!allEntries.length) return;
-            // O6: 样式未就绪时短暂重试若干次，而非直接放弃
             if (!map.isStyleLoaded()) {
-                if (vpRetries < 10) { vpRetries++; setTimeout(updateViewport, 200); }
+                if (vpRetryTimer !== null) return;
+                if (vpRetries >= 10) return;
+                vpRetries++;
+                vpRetryTimer = setTimeout(function () {
+                    vpRetryTimer = null;
+                    updateViewport();
+                }, 200);
                 return;
             }
             vpRetries = 0;
+            if (vpRetryTimer !== null) { clearTimeout(vpRetryTimer); vpRetryTimer = null; }
 
             var z = map.getZoom();
             var b = map.getBounds();

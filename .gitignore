@@ -8,3 +8,6 @@ node_modules/
 Thumbs.db
 Desktop.ini
 .DS_Store
+
+# AI 助手工作区（记忆、本地状态，不入库）
+.workbuddy/

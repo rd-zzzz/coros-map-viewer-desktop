@@ -155,7 +155,7 @@ for (var i = 0; i < allEntries.length; i++) {
 
 根据 VCM/VSM 类型采用不同的渲染方式：
 
-**VCM（等高线）**：仅创建 `line` 图层，颜色按图层索引的黄金角色相分配（`(i * 137.508) % 360`），线宽随缩放级别插值。
+**VCM（等高线）**：仅创建 `line` 图层，颜色按图层索引的黄金角色相分配（`(i * 137.508) % 360`），线宽随缩放级别插值；hover 时线宽加粗、不透明度提升（依赖 `promoteId` 从高程字段 `F` 提升要素 id）。
 
 **VSM（矢量要素）**：按几何类型创建 5 种图层：
 - `fill`：Polygon 填充，带 hover 透明度变化
@@ -278,7 +278,7 @@ npx tauri build
 | 文件 | 大小 | 说明 |
 |---|---|---|
 | `src-tauri/target/release/map-app.exe` | ~8.6 MB | 绿色版可执行文件，可直接运行 |
-| `src-tauri/target/release/bundle/nsis/MapViewer_0.2.0_x64-setup.exe` | ~6.7 MB | NSIS 安装包 |
+| `src-tauri/target/release/bundle/nsis/MapViewer_0.2.1_x64-setup.exe` | ~6.7 MB | NSIS 安装包 |
 
 ### 开发模式
 

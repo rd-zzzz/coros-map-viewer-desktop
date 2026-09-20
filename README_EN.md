@@ -157,7 +157,7 @@ for (var i = 0; i < allEntries.length; i++) {
 
 Different rendering approaches are used based on VCM/VSM type:
 
-**VCM (Contour)**: Creates only `line` layers. Colors are assigned by golden angle based on the layer index (`(i * 137.508) % 360`), and line width is interpolated by zoom level.
+**VCM (Contour)**: Creates only `line` layers. Colors are assigned by golden angle based on the layer index (`(i * 137.508) % 360`), and line width is interpolated by zoom level. On hover the line widens and its opacity increases (relies on `promoteId` promoting the feature id from the elevation field `F`).
 
 **VSM (Vector Features)**: Creates 5 types of layers by geometry type:
 - `fill`: Polygon fill with hover transparency change
@@ -280,7 +280,7 @@ The first build downloads and compiles Rust dependencies (Tauri + wry + tao), ta
 | File | Size | Description |
 |---|---|---|
 | `src-tauri/target/release/map-app.exe` | ~8.6 MB | Portable executable, can be run directly |
-| `src-tauri/target/release/bundle/nsis/MapViewer_0.2.0_x64-setup.exe` | ~6.7 MB | NSIS installer |
+| `src-tauri/target/release/bundle/nsis/MapViewer_0.2.1_x64-setup.exe` | ~6.7 MB | NSIS installer |
 
 ### Development Mode
 
