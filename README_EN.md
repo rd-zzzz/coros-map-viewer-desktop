@@ -61,7 +61,7 @@ VSM layer fields include `E` (numeric), `X` (string/name), `C`, `N`, `b`, `i`, `
 User selects folder
     │
     ▼
-Scan .t / .pmtiles files ──→ pmtiles.FileSource(file) ──→ PMTiles.getHeader() + getMetadata()
+Scan .t / .pmtiles files ──→ FileSource / DiskSource ──→ PMTiles.getHeader() + getMetadata()
     │                                                    │
     ▼                                                    ▼
 Build allEntries[]                              Read bounds, zoom range, layer list
@@ -99,7 +99,40 @@ When MapLibre requests `pmtiles://some-key`, `protocol.tile` will:
 3. Read the Header to return source metadata (bounds, zoom range)
 4. Or read the tile data at the specified z/x/y and return it to the renderer
 
-Each local file is wrapped as a PMTiles instance via `pmtiles.FileSource(file)`, then registered into the protocol via `protocol.add(inst)`. The identifier returned by `inst.source.getKey()` automatically becomes the key in the `pmtiles://` URL.
+After each local file is wrapped as a PMTiles instance, it is registered into the protocol via `protocol.add(inst)`. The identifier returned by `inst.source.getKey()` automatically becomes the key in the `pmtiles://` URL.
+
+### Reading Local Files: Two Paths
+
+A PMTiles JS Source only needs to implement two methods: `getKey()` and `getBytes(offset, length)`. This project provides two implementations depending on where the files come from:
+
+| Path | Trigger | Source implementation | How bytes are read |
+|---|---|---|---|
+| Folder picker | Click the drop zone, `<input type="file" webkitdirectory>` | `pmtiles.FileSource(file)` | Browser File API, files read by the WebView |
+| Native drag-drop | Drag files or folders from the OS file explorer | `DiskSource(path)` | On-demand Range reads via the Rust IPC command `read_file_slice` |
+
+```javascript
+// DiskSource: byte reads are performed by the Rust backend,
+// so the entire file is never loaded into WebView memory.
+function DiskSource(path) { this._path = path; }
+DiskSource.prototype.getKey = function () { return this._path; };
+DiskSource.prototype.getBytes = function (offset, length) {
+    return window.__TAURI__.core.invoke("read_file_slice", {
+        path: this._path, offset: offset, length: length
+    }).then(function (bytes) {
+        return { data: new Uint8Array(bytes).buffer };
+    });
+};
+```
+
+The Rust backend (`src-tauri/src/lib.rs`) exposes three IPC commands:
+
+| Command | Function |
+|---|---|
+| `read_path_as_files` | Accepts a file or folder path; recursively scans folders and returns the full paths of all `.t`/`.pmtiles` files within |
+| `read_file_slice` | Reads a specified byte range of a file by offset/length; the actual executor of PMTiles Range requests |
+| `read_file_bytes` | Reads the bytes of an entire file (reserved command; currently not called by the frontend) |
+
+On native drag-drop, the frontend first calls `read_path_as_files` to scan directories on the Rust side (bypassing the browser's folder-upload mechanism), then creates a `DiskSource` for each path to build the index. Even with roughly 6 GB of map data, only the tile index — not file contents — resides in WebView memory.
 
 ### Viewport On-Demand Loading
 
@@ -174,8 +207,10 @@ map-app/
 │
 ├── src-tauri/                    # Rust backend
 │   ├── Cargo.toml                # Rust dependency configuration
+│   ├── Cargo.lock                # Rust dependency lock file
 │   ├── tauri.conf.json           # Tauri window/packaging configuration
 │   ├── build.rs                  # Tauri build script
+│   ├── gen/schemas/              # Auto-generated permission and configuration schemas
 │   ├── capabilities/
 │   │   └── default.json          # Window operation permissions (minimize/maximize/close/drag)
 │   ├── icons/
@@ -256,7 +291,7 @@ The first build downloads and compiles Rust dependencies (Tauri + wry + tao), ta
 npx tauri dev
 ```
 
-Starts a development server. Changes to `src/index.html` trigger automatic hot reload.
+Starts a development server (built-in static server of the Tauri CLI). Changes to frontend files under `src/` trigger an automatic full-page reload in the WebView; changes to Rust code trigger an automatic recompilation and app restart.
 
 ## Release Optimization
 

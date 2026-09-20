@@ -61,7 +61,7 @@ VSM 各图层的字段包括 `E`（数字）、`X`（字符串/名称）、`C`�
 用户选择文件夹
     │
     ▼
-Scan .t / .pmtiles files ──→ pmtiles.FileSource(file) ──→ PMTiles.getHeader() + getMetadata()
+Scan .t / .pmtiles files ──→ FileSource / DiskSource ──→ PMTiles.getHeader() + getMetadata()
     │                                                    │
     ▼                                                    ▼
 构建 allEntries[]                              读取边界框、缩放范围、图层列表
@@ -98,7 +98,39 @@ maplibregl.addProtocol("pmtiles", protocol.tile);
 3. 读取 Header 返回源元数据（bounds, zoom range）
 4. 或读取指定 z/x/y 的瓦片数据返回给渲染器
 
-每个本地文件通过 `pmtiles.FileSource(file)` 包装为 PMTiles 实例，再通过 `protocol.add(inst)` 注册到协议中。`inst.source.getKey()` 返回的标识符自动成为 `pmtiles://` URL 的 key。
+每个本地文件包装为 PMTiles 实例后，通过 `protocol.add(inst)` 注册到协议中。`inst.source.getKey()` 返回的标识符自动成为 `pmtiles://` URL 的关键 key。
+
+### 本地文件读取：两条通道
+
+PMTiles JS 的 Source 接口只需实现 `getKey()` 和 `getBytes(offset, length)` 两个方法。本项目按文件来源提供两种实现：
+
+| 通道 | 触发方式 | Source 实现 | 读取方式 |
+|---|---|---|---|
+| 文件夹选择 | 点击拖拽区，`<input type="file" webkitdirectory>` | `pmtiles.FileSource(file)` | 浏览器 File API，由 WebView 读取文件 |
+| 原生拖拽 | 从操作系统资源管理器拖入文件或文件夹 | `DiskSource(path)` | Rust IPC `read_file_slice` 按需 Range 读取 |
+
+```javascript
+// DiskSource：字节读取交由 Rust 端完成，不把整个文件载入 WebView 内存
+function DiskSource(path) { this._path = path; }
+DiskSource.prototype.getKey = function () { return this._path; };
+DiskSource.prototype.getBytes = function (offset, length) {
+    return window.__TAURI__.core.invoke("read_file_slice", {
+        path: this._path, offset: offset, length: length
+    }).then(function (bytes) {
+        return { data: new Uint8Array(bytes).buffer };
+    });
+};
+```
+
+Rust 后端（`src-tauri/src/lib.rs`）暴露三个 IPC 命令：
+
+| 命令 | 功能 |
+|---|---|
+| `read_path_as_files` | 接收文件或文件夹路径；文件夹则递归扫描，返回其中所有 `.t`/`.pmtiles` 的完整路径 |
+| `read_file_slice` | 按 offset/length 读取文件的指定字节范围，是 PMTiles Range 请求的实际执行者 |
+| `read_file_bytes` | 读取整个文件的字节（预留命令，当前前端未调用） |
+
+原生拖拽时，前端先调用 `read_path_as_files` 在 Rust 端完成目录扫描（不经过浏览器的目录上传机制），再为每个路径创建 `DiskSource` 进行索引。这样即使面对约 6 GB 地图数据，WebView 内存中也只保存瓦片索引而非文件内容。
 
 ### 视口按需加载
 
@@ -173,8 +205,10 @@ map-app/
 │
 ├── src-tauri/                    # Rust 后端
 │   ├── Cargo.toml                # Rust 依赖配置
+│   ├── Cargo.lock                # Rust 依赖版本锁定
 │   ├── tauri.conf.json           # Tauri 窗口/打包配置
 │   ├── build.rs                  # Tauri 构建脚本
+│   ├── gen/schemas/              # Tauri 自动生成的权限与配置 schema
 │   ├── capabilities/
 │   │   └── default.json          # 窗口操作权限（最小化/最大化/关闭/拖拽）
 │   ├── icons/
@@ -255,7 +289,7 @@ npx tauri build
 npx tauri dev
 ```
 
-启动开发服务器，修改 `src/index.html` 后自动热重载。
+启动开发服务器（Tauri CLI 内置静态服务）。修改 `src/` 下的前端文件后 WebView 自动整页重新加载；修改 Rust 代码则自动重新编译并重启应用。
 
 ## Release 优化
 
