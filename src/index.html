@@ -682,6 +682,9 @@
         var loadingActive = false;
         var accumulatedFiles = [];
         var accumulatedNames = {};
+        // P1-3: 缓存的「可 hover 图层」id 列表与当前光标状态，供合并后的 mousemove 使用
+        var hoverableLayers = [];
+        var lastCursor = "";
 
         /* ============================================================
            Status Bar Helpers
@@ -703,6 +706,18 @@
         var protocol = new pmtiles.Protocol({ metadata: true });
         maplibregl.addProtocol("pmtiles", protocol.tile);
         dbg("Protocol registered", "dbg-ok");
+
+        // P0-2: pmtiles 4.x 的 Protocol 没有 remove()——实测 typeof 为 undefined，
+        // 而内部 tiles 是无上限的 Map。原来的 protocol.remove(key) 每次都抛 TypeError
+        // 并被空 catch 吞掉，PMTiles 实例（含目录缓存）因此全会话驻留，「清除所有」
+        // 也回收不掉。直接删 tiles 里的条目是唯一的回收路径。
+        function releaseProtocol(key) {
+            try {
+                if (protocol.tiles && typeof protocol.tiles.delete === "function") {
+                    protocol.tiles.delete(key);
+                }
+            } catch (e) {}
+        }
 
         /* ============================================================
            Semantic Palettes — 必须早于 Map Init：初始背景色与各语义
@@ -831,6 +846,9 @@
         /* ============================================================
            Status Bar: Coordinates
         ============================================================ */
+        // P1-3: 坐标显示与 hover 检测合并为同一个监听器（原有两个 mousemove，
+        // 各自做一次无层过滤的 queryRenderedFeatures）。这里只在缓存的非 fill 图层上
+        // 查询一次，且仅当命中结果变化时才改光标，避免每帧无谓地写样式。
         map.on("mousemove", function (e) {
             var ll = e.lngLat;
             sbCoords.textContent = ll.lat.toFixed(4) + ", " + ll.lng.toFixed(4);
@@ -840,6 +858,14 @@
                 var latRad = ll.lat * Math.PI / 180;
                 var ty = Math.floor((1 - Math.log(Math.tan(latRad) + 1 / Math.cos(latRad)) / Math.PI) / 2 * Math.pow(2, z));
                 sbTile.textContent = z + "/" + Math.max(0, tx) + "/" + Math.max(0, ty);
+            }
+            var want = "";
+            if (hoverableLayers.length) {
+                want = map.queryRenderedFeatures(e.point, { layers: hoverableLayers }).length ? "pointer" : "";
+            }
+            if (want !== lastCursor) {
+                lastCursor = want;
+                map.getCanvas().style.cursor = want;
             }
         });
 
@@ -903,6 +929,27 @@
             return new Promise(function (r) { setTimeout(r, 0); });
         }
 
+        // P1-5: 两条通道的文件标识口径天生不同——文件夹通道只能拿到 webkitRelativePath
+        // （浏览器 File API 不暴露绝对路径），拖拽通道拿到的是完整磁盘路径，
+        // 直接字符串相等比较会让「先选文件夹、再拖入同一文件夹」把同一文件索引两次。
+        // 这里统一为「归一化后互为路径后缀」判定：先抹平分隔符与大小写差异，
+        // 再判断其中一方是否以「/ + 另一方」结尾。
+        function normalizePathKey(p) {
+            return String(p == null ? "" : p).replace(/\\/g, "/").toLowerCase();
+        }
+
+        function isKnownPath(key) {
+            if (accumulatedNames[key]) return true;
+            for (var k in accumulatedNames) {
+                if (k.length > key.length) {
+                    if (k.slice(-key.length - 1) === "/" + key) return true;
+                } else if (key.length > k.length) {
+                    if (key.slice(-k.length - 1) === "/" + k) return true;
+                }
+            }
+            return false;
+        }
+
         /* ============================================================
            Lazy DiskSource — reads bytes from local files via Rust IPC
         ============================================================ */
@@ -913,10 +960,21 @@
         DiskSource.prototype.getBytes = function (offset, length) {
             return window.__TAURI__.core.invoke("read_file_slice", {
                 path: this._path, offset: offset, length: length
-            }).then(function (bytes) {
-                return { data: new Uint8Array(bytes).buffer };
+            }).then(function (b64) {
+                // P1-1: Rust 端返回 base64 文本（见 lib.rs 注释的原因），此处还原成 ArrayBuffer
+                return { data: base64ToArrayBuffer(b64) };
             });
         };
+
+        // P1-1: base64 → ArrayBuffer。保持 ES5 写法（无 Buffer / TextDecoder 依赖）
+        function base64ToArrayBuffer(b64) {
+            var bin = "";
+            try { bin = atob(b64); } catch (e) { bin = ""; }
+            var len = bin.length;
+            var bytes = new Uint8Array(len);
+            for (var i = 0; i < len; i++) bytes[i] = bin.charCodeAt(i);
+            return bytes.buffer;
+        }
 
         /* ============================================================
            Semantic Style — Draw Order & Layer Builders
@@ -964,6 +1022,17 @@
                 for (var id in layerSlotMap) {
                     if (layerSlotMap[id] === slot && map.getLayer(id)) map.moveLayer(id);
                 }
+            }
+        }
+
+        // P1-3: hover 查询限定在「非 fill」图层上——大面积的地表/水体 fill 会让指针在
+        // 任意位置都显示 pointer，排除它们既让光标语义更准，也缩小查询范围。
+        // 列表缓存，仅在源增删时重建，避免每次鼠标移动遍历全部图层。
+        function refreshHoverableLayers() {
+            hoverableLayers = [];
+            for (var id in layerSlotMap) {
+                var lyr = map.getLayer(id);
+                if (lyr && lyr.type !== "fill") hoverableLayers.push(id);
             }
         }
 
@@ -1243,12 +1312,17 @@
             for (var h = 0; h < vl.length; h++) have[vl[h].id] = true;
             if (!have.Q) return;
 
+            // P0-1: 这里不再使用 feature-state。实测 36 个 z11 瓦片里 Q 层 43 个要素
+            // 只有 5 个不同高程值（F=600 跨 15 个瓦片），而 MapLibre 的 feature-state
+            // 以 (sourceLayer, id) 为键且跨瓦片生效——hover 一条等高线会点亮整个 source
+            // 内所有同高程线。高程天然不唯一，无法充当要素 id，故 VCM 不提供 hover 高亮，
+            // 仅保留点击属性面板（不依赖要素 id）。
             var id0 = sn + "_contour";
             addTagged(ctx, { id: id0, source: sn, "source-layer": "Q", type: "line",
                 filter: ["!=", ["%", ["get", "F"], 50], 0],
                 paint: { "line-color": p.contourMinor,
                     "line-width": ["interpolate", ["linear"], ["zoom"], 9, 0.4, 13, 0.8],
-                    "line-opacity": ["case", ["boolean", ["feature-state", "hover"], false], 1, 0.75] } },
+                    "line-opacity": 0.75 } },
                 "contour");
             bindPaint(ctx, id0, "line-color", function (pp) { return pp.contourMinor; });
 
@@ -1257,7 +1331,7 @@
                 filter: ["==", ["%", ["get", "F"], 50], 0],
                 paint: { "line-color": p.contourIndex,
                     "line-width": ["interpolate", ["linear"], ["zoom"], 9, 0.7, 13, 1.4],
-                    "line-opacity": ["case", ["boolean", ["feature-state", "hover"], false], 1, 0.9] } },
+                    "line-opacity": 0.9 } },
                 "contour");
             bindPaint(ctx, id1, "line-color", function (pp) { return pp.contourIndex; });
         }
@@ -1288,6 +1362,9 @@
                         paint: { "circle-color": c,
                             "circle-radius": ["interpolate", ["linear"], ["zoom"], 8, 2, 14, 5],
                             "circle-stroke-color": p.airportLine, "circle-stroke-width": 1 } }, "poi-icon");
+                    // 清理项: 随机色 c 与主题无关无需绑定，但描边/文字取自调色板，
+                    // 原来漏了 bindPaint，切主题后这些颜色会停留在旧值
+                    bindPaint(ctx, pfx + "_circle", "circle-stroke-color", function (pp) { return pp.airportLine; });
 
                     addTagged(ctx, { id: pfx + "_label", source: sn, "source-layer": lid, type: "symbol",
                         filter: ["any", ["==", ["geometry-type"], "Point"], ["==", ["geometry-type"], "Polygon"]],
@@ -1296,6 +1373,8 @@
                             "text-size": ["interpolate", ["linear"], ["zoom"], 8, 7, 14, 12] },
                         paint: { "text-color": p.roadLabel, "text-halo-color": p.halo,
                             "text-halo-width": 1.5 } }, "place-label");
+                    bindPaint(ctx, pfx + "_label", "text-color", function (pp) { return pp.roadLabel; });
+                    bindPaint(ctx, pfx + "_label", "text-halo-color", function (pp) { return pp.halo; });
                 })(i);
             }
         }
@@ -1314,12 +1393,14 @@
             var isVCM = entry.type === "vcm";
             var ctx = { ids: [], bindings: [] };
 
-            // H2: promoteId 让 MVT 要素获得数字 id，VCM feature-state hover 才能生效。
-            // VCM 用高程字段 F；VSM/generic 各 source-layer 用数字字段 E（缺失则 id 为空，无副作用）。
+            // H2: promoteId 让 MVT 要素获得数字 id，供 feature-state 使用。
+            // P0-1: VCM 不再提升 F——实测 z11 瓦片里 Q 层 43 个要素只有 5 个高程值
+            // （F=600 跨 15 个瓦片），feature-state 以 (sourceLayer, id) 为键且跨瓦片生效，
+            // 提升 F 会让 hover 一条等高线点亮整个 source 内所有同高程线。等高线已无
+            // feature-state 图层，保留 promoteId 只会制造重复 id，故置空。
+            // VSM/generic 仍按 source-layer 提升 E（缺失则 id 为空，无副作用）。
             var promoteId = null;
-            if (isVCM) {
-                promoteId = "F";
-            } else {
+            if (!isVCM) {
                 var pidMap = {};
                 for (var pp = 0; pp < vl.length; pp++) pidMap[vl[pp].id] = "E";
                 promoteId = pidMap;
@@ -1339,19 +1420,20 @@
                 } else {
                     buildGenericLayers(sn, vl, pal, ctx);
                 }
-                reorderLayers();
+                // P1-2: 全局重排已从此处移出——每个 VSM 源有 27 层、最多 24 个源，
+                // 放在 loadEntry 内会变成每层一次全量 moveLayer（单次刷新约 7800 次）。
+                // 现改为在 updateViewport() 末尾对整批只做一次。
 
                 loadedSources[sn] = { ids: ctx.ids, bindings: ctx.bindings, type: entry.type, key: key };
             } catch (e) {
                 // H1: 加载中途失败，移除已建图层后再删 source（顺序不能反），并回收协议实例
                 for (var ci2 = 0; ci2 < ctx.ids.length; ci2++) {
-                    try { if (map.getLayer(ctx.ids[ci2])) map.removeLayer(ctx.ids[ci2]); } catch (ce) {
-                        delete layerSlotMap[ctx.ids[ci2]];
-                    }
+                    try { if (map.getLayer(ctx.ids[ci2])) map.removeLayer(ctx.ids[ci2]); } catch (ce) {}
+                    // 清理项: 原来 catch 内外各写一次 delete，catch 内那句是死代码
                     delete layerSlotMap[ctx.ids[ci2]];
                 }
                 if (sourceAdded) { try { if (map.getSource(sn)) map.removeSource(sn); } catch (ce2) {} }
-                try { protocol.remove(key); } catch (ce3) {}
+                releaseProtocol(key);
                 delete loadedSources[sn];
                 throw e;
             }
@@ -1364,7 +1446,7 @@
                     try { if (map.getLayer(entry.ids[i])) map.removeLayer(entry.ids[i]); } catch (e) {}
                     delete layerSlotMap[entry.ids[i]];
                 }
-                if (entry.key) { try { protocol.remove(entry.key); } catch (e) {} }
+                if (entry.key) { releaseProtocol(entry.key); }
             }
             try { if (map.getSource(sn)) map.removeSource(sn); } catch (e) {}
             delete loadedSources[sn];
@@ -1438,6 +1520,10 @@
             for (var ri = 0; ri < toRemove.length; ri++) unloadSource(toRemove[ri]);
 
             if (loaded > 0 || toRemove.length > 0) {
+                // P1-2: 整批只重排一次（原在 loadEntry 内，每层触发一次全量 moveLayer）
+                reorderLayers();
+                // P1-3: 源有增删，重建可 hover 图层缓存
+                refreshHoverableLayers();
                 dbg("Z" + z.toFixed(1) + " | +" + loaded + " -" + toRemove.length + " | " + Object.keys(loadedSources).length + " active", "dbg-info");
             }
 
@@ -1460,9 +1546,11 @@
             var totalNew = 0;
             for (var fi = 0; fi < files.length; fi++) {
                 var fn = files[fi].name.toLowerCase();
-                var fkey = files[fi].webkitRelativePath || files[fi].name;
-                // M1+O2: 与主循环口径一致；按相对路径去重，detectType 无法识别不计入，避免进度卡在 <100%
-                if ((fn.endsWith(".t") || fn.endsWith(".pmtiles")) && !accumulatedNames[fkey] && detectType(files[fi])) totalNew++;
+                // P1-5: key 统一经 normalizePathKey，重复判定走 isKnownPath（可与拖拽通道
+                // 的完整路径互相识别）；M1+O2: 与主循环口径一致，detectType 无法识别不计入，
+                // 避免进度卡在 <100%
+                var fkey = normalizePathKey(files[fi].webkitRelativePath || files[fi].name);
+                if ((fn.endsWith(".t") || fn.endsWith(".pmtiles")) && !isKnownPath(fkey) && detectType(files[fi])) totalNew++;
             }
 
             if (!totalNew) {
@@ -1489,8 +1577,8 @@
             for (var idx = 0; idx < files.length; idx++) {
                 var file = files[idx];
                 if (!file.name.toLowerCase().endsWith(".t") && !file.name.toLowerCase().endsWith(".pmtiles")) continue;
-                var fileKey = file.webkitRelativePath || file.name;
-                if (accumulatedNames[fileKey]) { skipCount++; continue; }
+                var fileKey = normalizePathKey(file.webkitRelativePath || file.name);
+                if (isKnownPath(fileKey)) { skipCount++; continue; }
 
                 var type = detectType(file);
                 if (!type) continue;
@@ -1624,7 +1712,9 @@
             var f = features[0];
             for (var fi2 = 0; fi2 < features.length; fi2++) {
                 var lid2 = (features[fi2].layer && features[fi2].layer.id) ? features[fi2].layer.id : "";
-                if (lid2.indexOf("_fill") !== lid2.length - 5) { f = features[fi2]; break; }
+                // 清理项: 原写法 indexOf("_fill") !== length - 5 语义绕且依赖长度，
+                // 直接取尾部 5 字符比较更直白、无边界歧义
+                if (lid2.slice(-5) !== "_fill") { f = features[fi2]; break; }
             }
             var rows = '<tr><td>source</td><td>' + escapeHtml(f.source) + "</td></tr>" +
                 '<tr><td>layer</td><td>' + escapeHtml(f.sourceLayer || "-") + "</td></tr>" +
@@ -1649,17 +1739,11 @@
             });
         };
 
-        /* Hover */
-        var hovered = null;
-        map.on("mousemove", function (e) {
-            var features = map.queryRenderedFeatures(e.point);
-            if (hovered && hovered.id !== undefined) map.setFeatureState(hovered, { hover: false });
-            if (features.length && features[0].id !== undefined) {
-                hovered = features[0];
-                map.setFeatureState(hovered, { hover: true });
-            }
-            map.getCanvas().style.cursor = features.length ? "pointer" : "";
-        });
+        /* Hover —— P0-1/P1-3: 整段移除。
+           原实现把 hover 要素写入 feature-state，但唯一读取它的图层（VCM 等高线）
+           用高程 F 当 id，实测会跨瓦片串扰点亮所有同高程线，已随 promoteId 一并去掉。
+           光标反馈已合并进状态栏那个 mousemove（见「Status Bar: Coordinates」）。
+           注意：VSM 的 promoteId（E）与 generic 一样保留，只是目前没有图层消费它。 */
 
         /* Folder Input */
         var folderInput = document.getElementById("folder-input");
@@ -1712,6 +1796,13 @@
         }
 
         async function indexDroppedPaths(filePaths) {
+            // P0-3: 与 indexFolder 对称的重入守卫。扫描期间 UI 仍可接收拖放，
+            // 缺守卫会让两个索引循环并发：进度条互相覆盖、状态文案打架，
+            // 且双方都判定 wasEmpty 为 true，从而各 fitBounds 一次，视野跳两下。
+            if (loadingActive) {
+                dbg("扫描进行中，忽略本次拖入", "dbg-warn");
+                return;
+            }
             var statusEl = document.getElementById("main-status");
             var progress = document.getElementById("progress-bar");
             var progressFill = document.getElementById("progress-fill");
@@ -1722,10 +1813,12 @@
             // H3: 记录入口是否为空，仅首次加载才调整视图，避免追加文件时重置用户视野
             var wasEmpty = allEntries.length === 0;
 
-            // O2: 按完整路径去重（同名不同目录不再误判为重复）
+            // P1-5: 与文件夹通道共用归一化 key 与后缀判定（见 normalizePathKey 注释），
+            // 使「先选文件夹、再拖入同一文件夹」不会把同一文件索引两次。
+            // O2: 完整路径去重，同名不同目录不再误判为重复。
             var newPaths = [];
             for (var pi = 0; pi < filePaths.length; pi++) {
-                if (!accumulatedNames[filePaths[pi]]) newPaths.push(filePaths[pi]);
+                if (!isKnownPath(normalizePathKey(filePaths[pi]))) newPaths.push(filePaths[pi]);
             }
 
             if (!newPaths.length) {
@@ -1750,7 +1843,7 @@
                 var fullPath = newPaths[idx];
                 var fileName = fullPath.replace(/^.*[\\\/]/, "");
 
-                if (accumulatedNames[fullPath]) continue;
+                if (isKnownPath(normalizePathKey(fullPath))) continue;
 
                 var fakeFile = { name: fileName, webkitRelativePath: "", _dropPath: fullPath };
                 var type = detectType(fakeFile);
@@ -1763,7 +1856,7 @@
                     var meta = await inst.getMetadata();
                     var sn = type + "_" + fileName.replace(/\.(t|pmtiles)$/i, "");
 
-                    accumulatedNames[fullPath] = true;
+                    accumulatedNames[normalizePathKey(fullPath)] = true;
 
                     allEntries.push({
                         diskPath: fullPath, header: header, meta: meta,
@@ -1827,6 +1920,13 @@
             allEntries = [];
             accumulatedFiles = [];
             accumulatedNames = {};
+            // 清理项: 原来不收尾这些状态，清除后面板可能残留已删除源的属性、
+            // hoverableLayers 仍指向已移除的图层、光标停留在 pointer
+            infoPanel.style.display = "none";
+            lastProps = "";
+            hoverableLayers = [];
+            lastCursor = "";
+            try { map.getCanvas().style.cursor = ""; } catch (e) {}
             document.getElementById("file-drop").classList.remove("has-file");
             document.getElementById("file-drop").querySelector(".drop-text").textContent = "点击选择文件夹";
             document.getElementById("file-drop").querySelector(".drop-hint").textContent = "支持 VCM / VSM 子目录及 .pmtiles 文件";
