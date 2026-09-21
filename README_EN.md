@@ -186,9 +186,9 @@ Previously colors were generated randomly by golden angle based on layer index (
 
 **Text labels**: Names are read from the COROS `X` field (the standard `name` is absent). Road names follow the road line in dark gray, administrative and POI names are dark red, peak names brown, all with a white halo.
 
-**VCM (contours, `Q` layer)**: Index/contour lines are distinguished by `F` (elevation) `% 50`, drawn as thin tan lines; on hover the opacity increases (relies on `promoteId` promoting the feature id from the elevation field `F`).
+**VCM (contours, `Q` layer)**: Index/contour lines are distinguished by `F` (elevation) `% 50`, drawn as thin tan lines with fixed opacity (0.75 for intermediate, 0.9 for index). There is no hover highlight: contour elevation is inherently non-unique (in a sample of 36 z11 tiles, 43 features carried only 5 distinct elevations), so it cannot serve as a feature id — `feature-state` would light up every same-elevation line across the whole source.
 
-**Global stacking**: All layers follow `SLOT_ORDER` (land/water → roads from local to motorway → trails/railways → icons → text, bottom to top); after each `loadEntry()`, `reorderLayers()` reorders them via `moveLayer`, keeping multi-source stacking consistent.
+**Global stacking**: All layers follow `SLOT_ORDER` (land/water → roads from local to motorway → trails/railways → icons → text, bottom to top) and are reordered by `reorderLayers()` via `moveLayer`, keeping multi-source stacking consistent; the reorder runs once per viewport refresh instead of once per source.
 
 Generic `.pmtiles` files do not use the semantic colors above; they keep the geometry-based random-color fallback rendering.
 

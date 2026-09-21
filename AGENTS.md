@@ -76,7 +76,8 @@ PMTiles JS 的 Source 只需实现 `getKey()` 与 `getBytes(offset, length)`。�
 ### 2. Rust IPC 命令（`src-tauri/src/lib.rs`）
 
 - `read_path_as_files(path)`：文件则校验后缀直接返回；文件夹则递归扫描，返回所有 `.t` / `.pmtiles` 的完整路径。
-- `read_file_slice(path, offset, length)`：读取指定字节范围（自动 clamp 到文件长度），是 PMTiles Range 请求的实际执行者。
+- `read_file_slice(path, offset, length)`：读取指定字节范围（自动 clamp 到文件长度），是 PMTiles Range 请求的实际执行者。**返回 base64 字符串而不是 `Vec<u8>`**——`Vec<u8>` 会被 serde 序列化成 JSON 数字数组，实测 40 KB 二进制膨胀到 3.56x、序列化+解析约 1.4 ms/瓦片；base64 只有 1.33x、约 0.075 ms（端到端往返已实测校验一致）。前端 `DiskSource` 用 `base64ToArrayBuffer()`（基于 `atob`）还原成 `ArrayBuffer`。
+- **溢出防护（勿改回）**：`end` 用 `offset.saturating_add(length).min(file_len)`。`offset + length` 在 u64 下可能溢出，release 构建无溢出检查，回绕会让 `min()` 取到巨大值并触发 `vec![0u8; 巨大]` 的内存分配。
 
 新增或修改 IPC 命令时必须同时：① 在 `tauri::generate_handler!` 中注册；② 如涉及新的核心权限，更新 `capabilities/default.json`；③ 在前端通过 `window.__TAURI__.core.invoke(...)` 调用。
 
@@ -85,7 +86,9 @@ PMTiles JS 的 Source 只需实现 `getKey()` 与 `getBytes(offset, length)`。�
 ### 3. 视口按需加载
 
 - **索引阶段**：遍历文件，仅读取 Header 与 Metadata 存入 `allEntries[]`，不加入地图。
-- **增量与去重**：`accumulatedNames` 是两条通道共用的去重表，但 **key 口径不同**——文件夹通道用 `webkitRelativePath || name`，原生拖拽通道用完整磁盘路径；口径混用会让同一文件被索引两次。索引开始前先预扫一遍统计 `totalNew`（后缀合法 + 未去重 + `detectType` 能识别，三者同时满足才计数），否则进度条永远走不到 100%。
+- **增量与去重**：`accumulatedNames` 是两条通道共用的去重表，但两条通道**天生拿不到同口径的标识**——文件夹通道只有 `webkitRelativePath`（浏览器 File API 不暴露绝对路径），原生拖拽通道是完整磁盘路径。因此统一走 `normalizePathKey()`（分隔符归一为 `/`、Windows 下转小写）+ `isKnownPath()`（归一化后互为路径后缀即视为同一文件）。不要改回直接字符串相等比较，否则「先选文件夹再拖入同一文件夹」会把同一文件索引两次。索引开始前先预扫一遍统计 `totalNew`（后缀合法 + `isKnownPath` 为假 + `detectType` 能识别，三者同时满足才计数），否则进度条永远走不到 100%。
+- **重入守卫（两条通道都要有）**：`indexFolder` 与 `indexDroppedPaths` 开头都必须判定 `loadingActive` 后直接返回。少一个就会出现两个索引循环并发：进度条互相覆盖、状态文案打架，且双方都判定 `wasEmpty` 为 true 从而各 `fitBounds` 一次，视野跳两下。
+- **PMTiles 实例回收（易踩坑）**：pmtiles 4.x 的 `Protocol` **没有 `remove()`**（实测 `typeof` 为 `undefined`），内部 `tiles` 是无上限的 `Map`。原来写的 `protocol.remove(key)` 每次都抛 `TypeError` 并被空 `catch` 吞掉，导致实例（含目录缓存）全会话驻留、「清除所有」也回收不掉。回收必须走 `releaseProtocol(key)` → `protocol.tiles.delete(key)`。
 - **让出主线程**：索引循环每处理 10 个（拖拽通道 20 个）文件 `await yieldUI()` 一次，避免数百个文件时界面冻结。
 - **筛选阶段**：`moveend` / `zoomend` 时计算视口 + padding 的边界框，与每个 entry 的 bounds 做相交判断，并按 `minZoom` 过滤。
 - **排序与限流**：候选源按 bounds 与视口的**相交面积降序**排序（优先保证大面积覆盖视口的源），最多激活 `MAX_ACTIVE_SOURCES`（24）个。
@@ -99,12 +102,13 @@ PMTiles JS 的 Source 只需实现 `getKey()` 与 `getBytes(offset, length)`。�
 - **VSM 图层语义**（经真实瓦片解码确认，详见 index.html 注释）：`L` 道路（线+面，E 分级：7/19/20 高速、8/9 主干、10 次干、11–16/21/22/23 支路、0 小路、29 登山步道、2 铁路、3 地铁/BRT）；`F` 地表覆盖（E1 林地、E4 农田、E7 城市公园、E2 铁路走廊）；`N` 水体；`I` 保护区；`B` 机场用地；`P`/`O` 低/高 zoom 水系线；`K` POI（点，E 分类）；`J` 行政地名；`H` 山峰；`A` 机场点。
 - **道路绘制**：每个等级画 casing（描边）+ fill（铺面）两层；低 zoom 次/支路为浅灰细线、高 zoom（约 z15）为白色铺面（`lowHighExpr` 随 zoom 插值），主干道/高速为 peach/salmon 色；E29 步道、以及 E13 中 `i`=19/23 的公园步道/步行街为黑色虚线（`line-dasharray`，后者在 local 过滤器中排除、并入 trail 层）。线宽刻意收窄以露出沿路 E7 绿带。名称字段为 `X`，道路名/POI 标签的 filter 与 text-field 都必须兼容 X。
 - **POI 图标**：使用 `src/sprites/coros/`（统一蓝色圆形 + 白色字形），由构建脚本 `tools/build-coros-sprite.js` 从 v4/light 白色字形掩膜生成；该精灵缺省不随主题变色。医院/停车/加油/露营/高尔夫为脚本手绘字形。
-- **VCM**：`Q` 层等高线，按 `F`（高程）`% 50` 区分首曲线 / 计曲线，淡棕褐色细线；hover 时提升不透明度（保留 feature-state）。
-- **全局叠放顺序**：所有图层按 `SLOT_ORDER`（自底向顶：地表/水体 → 道路（支路→高速）→ 步道/铁路 → 图标 → 各类文字）在每次 `loadEntry()` 后由 `reorderLayers()` 通过 `moveLayer` 重排，保证多源叠放一致。
-- **要素 id（`promoteId`）**：VCM 提升高程字段 `F`；VSM / generic 为每个 source-layer 提升数字字段 `E`（缺失则 id 为空，无副作用）。
+- **VCM**：`Q` 层等高线，按 `F`（高程）`% 50` 区分首曲线 / 计曲线，淡棕褐色细线。**没有 hover 高亮**——曾尝试用 `feature-state` 提升不透明度，但实测 36 个 z11 瓦片里 Q 层 43 个要素只有 5 个高程值（`F=600` 跨 15 个瓦片），而 `feature-state` 以 `(sourceLayer, id)` 为键且跨瓦片生效，hover 一条线会点亮整个 source 内所有同高程线。高程天然不唯一，不能当要素 id。
+- **全局叠放顺序**：所有图层按 `SLOT_ORDER`（自底向顶：地表/水体 → 道路（支路→高速）→ 步道/铁路 → 图标 → 各类文字）由 `reorderLayers()` 通过 `moveLayer` 重排，保证多源叠放一致。**只在 `updateViewport()` 末尾对整批调用一次**——不要挪回 `loadEntry()` 内部：单 VSM 源 27 层 × 最多 24 源，逐层触发会变成单次刷新约 7800 次 `moveLayer`。
+- **要素 id（`promoteId`）**：VCM **不提升**（见上一条）；VSM / generic 为每个 source-layer 提升数字字段 `E`（缺失则 id 为空，无副作用）。目前没有图层消费 `feature-state`，`promoteId` 只为将来按要素着色预留。
 - **类型识别 `detectType`**：优先匹配路径中的 `VCM` / `VSM` 目录，其次匹配文件名 `C` / `S` 前缀，最后按 `.pmtiles` 后缀归为 generic（generic 保留按几何类型 + 随机色的回退渲染）。
 - **主题持久化**：选择结果存在 `localStorage` 键 `mapviewer-theme-v2`（缺省 `light`）。v2 键刻意与早期版本的 `dark` 残留隔离；改键名等于让老用户主题重置，需谨慎。
 - **要素点击优先级**：`click` 处理会跳过 id 以 `_fill` 结尾的图层，避免半透明面要素压在线 / 点 / 标注之上。`queryRenderedFeatures` 的返回顺序不可依赖，不要改成直接取 `features[0]`。
+- **鼠标移动只有一个监听器**：坐标显示与 hover 光标反馈合并注册在 `mousemove` 上（曾有第二个监听器各做一次无层过滤的 `queryRenderedFeatures`）。查询只针对 `refreshHoverableLayers()` 缓存的**非 fill 图层**列表（源增删时重建），且只在命中结果变化时才改 `style.cursor`。新增需要根据 hover 写样式的功能时，先确认要素 id 是否真的唯一，别重蹈 VCM 的覆辙。
 - **日志缓冲**：调试日志最多保留 80 行（`debugLines.shift()`），错误行加红色左竖线、警告行加黄色左竖线；所有写入均经 `escapeHtml()`。
 
 ### 5. 自定义窗口
