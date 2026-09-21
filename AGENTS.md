@@ -15,9 +15,10 @@ MapViewer 是一个基于 **Tauri 2 + MapLibre GL JS** 的**完全离线**桌面
 
 1. **完全离线，禁止联网依赖**：所有第三方库、CSS、字体、精灵图均已本地化到 `src/`。不得引入任何 CDN URL，不得在运行时发起外部网络请求。
 2. **零前端构建**：不使用 webpack / vite 等打包器，也不通过 npm 引入前端运行时包。Tauri 的 `frontendDist` 直接指向 `src/` 目录。
-3. **前端保持 ES5 风格**：统一使用 `var`、`function` 声明、字符串 `+` 拼接、`Promise.then`；**不要**使用 `let` / `const`、箭头函数、模板字符串、ES 模块、`async` 语法糖（现有代码刻意保持这一风格）。
+3. **前端保持 ES5 风格**：统一使用 `var`、`function` 声明、字符串 `+` 拼接、`Promise.then`；**不要**使用 `let` / `const`、箭头函数、模板字符串、ES 模块、`async` 语法糖（现有代码刻意保持这一风格）。**既有例外**：`indexFolder()` 与 `indexDroppedPaths()` 已声明为 `async function`——索引循环需要 `await` 顺序读取 Header/Metadata，并用 `yieldUI()` 让出主线程。新增代码仍守 ES5，不要继续扩散 `async`。
 4. **单文件内聚**：HTML、CSS、JavaScript 全部位于 `src/index.html`，以 `/* ============ Section Name ============ */` 注释块分节。新增代码应归入对应分节，并保持该节的缩进与命名风格（`<script>` 内为 8 空格缩进，CSS 为 4 空格）。
 5. **改动必须实测**：前端逻辑改动通过 `npx tauri dev` 在真实 WebView 中验证；语法通过不等于功能正确。
+   > **AI 辅助开发的验证上限**：AI 侧最多能做到「Rust 编译通过（`cargo check`）+ exe 启动存活 + WebView2 进程拉起」。文件选择对话框、原生拖拽、hover 反馈、属性面板点击等真实交互**无法自动化**，必须由 Rodney 手动跑一次。不要声称已经验证过这些路径。
 6. **动态文本必须转义**：任何写入 `innerHTML` 的动态内容（PMTiles 属性、路径、文件名等）必须先经 `escapeHtml()`；CSP 已在 `tauri.conf.json` 启用，不得回退为 `null`，也不要为图省事把 `'unsafe-inline'` 加入 `script-src`。
 
 ## 技术栈
@@ -51,13 +52,13 @@ map viewer/
 │       ├── main.rs               # 入口，调用 lib::run()
 │       └── lib.rs                # Tauri Builder + IPC 命令实现
 ├── package.json                  # 仅依赖 @tauri-apps/cli
-├── map/                          # 本地地图数据（不提交 git）：VCM/ 与 VSM/，各含区域子目录，内为 .t 文件
-├── tools/                        # 构建期/分析用 Node 脚本（不进入应用运行时），如 COROS 图标精灵生成器
+├── Map/                          # 本地地图数据（不提交 git）：VCM/ 与 VSM/，各含区域子目录，内为 .t 文件
+├── tools/                        # 构建期/分析用 Node 脚本（不进入应用运行时）；目前仅 build-coros-sprite.js 入库，其余为本地调试脚本
 ├── README.md / README_EN.md      # 中文 / 英文说明（须同步维护）
 └── AGENTS.md                     # 本文件
 ```
 
-> **地图数据位置**：手表地图包放在项目根目录的 `map/` 文件夹，结构为 `map/VCM/<区域>/*.t`（等高线）与 `map/VSM/<区域>/*.t`（矢量要素）。这些 `.t` 数据体积约 6 GB，**不得提交 git**（见文末 Git 约定）；应用运行时由用户自行选择该文件夹或拖入。
+> **地图数据位置**：手表地图包放在项目根目录的 `Map/` 文件夹，结构为 `Map/VCM/<区域>/*.t`（等高线）与 `Map/VSM/<区域>/*.t`（矢量要素）。这些 `.t` 数据体积约 6 GB，`/map/` 与 `/Map/` 均已在 `.gitignore` 中排除；应用运行时由用户自行选择该文件夹或拖入。
 
 ## 架构要点（修改相关代码前必读）
 
@@ -79,9 +80,13 @@ PMTiles JS 的 Source 只需实现 `getKey()` 与 `getBytes(offset, length)`。�
 
 新增或修改 IPC 命令时必须同时：① 在 `tauri::generate_handler!` 中注册；② 如涉及新的核心权限，更新 `capabilities/default.json`；③ 在前端通过 `window.__TAURI__.core.invoke(...)` 调用。
 
+**递归安全（勿移除）**：目录扫描 `scan_dir()` 使用 `entry.file_type()`——该 API 不跟随符号链接——并显式跳过 symlink / junction，防止链接指回祖先目录造成无限递归。新增扫描逻辑时必须保留这一行为。
+
 ### 3. 视口按需加载
 
 - **索引阶段**：遍历文件，仅读取 Header 与 Metadata 存入 `allEntries[]`，不加入地图。
+- **增量与去重**：`accumulatedNames` 是两条通道共用的去重表，但 **key 口径不同**——文件夹通道用 `webkitRelativePath || name`，原生拖拽通道用完整磁盘路径；口径混用会让同一文件被索引两次。索引开始前先预扫一遍统计 `totalNew`（后缀合法 + 未去重 + `detectType` 能识别，三者同时满足才计数），否则进度条永远走不到 100%。
+- **让出主线程**：索引循环每处理 10 个（拖拽通道 20 个）文件 `await yieldUI()` 一次，避免数百个文件时界面冻结。
 - **筛选阶段**：`moveend` / `zoomend` 时计算视口 + padding 的边界框，与每个 entry 的 bounds 做相交判断，并按 `minZoom` 过滤。
 - **排序与限流**：候选源按 bounds 与视口的**相交面积降序**排序（优先保证大面积覆盖视口的源），最多激活 `MAX_ACTIVE_SOURCES`（24）个。
 - **加载 / 卸载**：`loadEntry()` 整体包在 try 内，注册协议实例、添加 source 与 layers；若中途失败必须就地按"先删图层、再删 source、最后移除协议"清理后再抛出，避免孤儿资源。`unloadSource()` 反向移除。
@@ -98,6 +103,9 @@ PMTiles JS 的 Source 只需实现 `getKey()` 与 `getBytes(offset, length)`。�
 - **全局叠放顺序**：所有图层按 `SLOT_ORDER`（自底向顶：地表/水体 → 道路（支路→高速）→ 步道/铁路 → 图标 → 各类文字）在每次 `loadEntry()` 后由 `reorderLayers()` 通过 `moveLayer` 重排，保证多源叠放一致。
 - **要素 id（`promoteId`）**：VCM 提升高程字段 `F`；VSM / generic 为每个 source-layer 提升数字字段 `E`（缺失则 id 为空，无副作用）。
 - **类型识别 `detectType`**：优先匹配路径中的 `VCM` / `VSM` 目录，其次匹配文件名 `C` / `S` 前缀，最后按 `.pmtiles` 后缀归为 generic（generic 保留按几何类型 + 随机色的回退渲染）。
+- **主题持久化**：选择结果存在 `localStorage` 键 `mapviewer-theme-v2`（缺省 `light`）。v2 键刻意与早期版本的 `dark` 残留隔离；改键名等于让老用户主题重置，需谨慎。
+- **要素点击优先级**：`click` 处理会跳过 id 以 `_fill` 结尾的图层，避免半透明面要素压在线 / 点 / 标注之上。`queryRenderedFeatures` 的返回顺序不可依赖，不要改成直接取 `features[0]`。
+- **日志缓冲**：调试日志最多保留 80 行（`debugLines.shift()`），错误行加红色左竖线、警告行加黄色左竖线；所有写入均经 `escapeHtml()`。
 
 ### 5. 自定义窗口
 
@@ -127,6 +135,7 @@ npx tauri build      # 发布构建，产出 exe 与 NSIS 安装包
 - 提交信息使用 Conventional Commits 风格的英文前缀：`feat` / `fix` / `docs` / `refactor` / `init` 等，后接简短英文描述。
 - 远程仓库：`origin` → `https://github.com/rd-zzzz/coros-map-viewer-desktop`，主分支为 `main`。
 - `node_modules/`、`src-tauri/target/` 以及地图数据文件（`.t` / `.pmtiles`，体积约 6 GB）不得提交。
+- `tools/` 下只有 `build-coros-sprite.js` 入库；其余临时调试脚本、截图与采样产物保持未跟踪状态，不要顺手 `git add tools/`。
 
 ## Windows / PowerShell 约定
 

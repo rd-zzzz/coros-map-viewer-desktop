@@ -18,7 +18,7 @@ VCM（等高线）和 VSM（矢量要素）地图数据来源于高驰（COROS�
 |---|---|---|
 | 桌面壳 | Tauri 2 (Rust) | 窗口管理、系统集成、打包为单文件 exe |
 | 地图渲染 | MapLibre GL JS 4.7 | WebGL 矢量瓦片渲染引擎 |
-| 瓦片协议 | PMTiles JS 4.4 | 解析 PMTiles V3 格式，通过 HTTP Range Request 按需读取瓦片 |
+| 瓦片协议 | PMTiles JS 4.4 | 解析 PMTiles V3 格式，按 offset/length 按需读取瓦片（本地经 Rust IPC，不走 HTTP） |
 | 字体/图标 | Noto Sans + 自建 COROS 精灵 | 本地离线文字标注；蓝色圆形 POI 图标（构建期生成） |
 
 ## 数据格式
@@ -48,10 +48,10 @@ VCM（等高线）和 VSM（矢量要素）地图数据来源于高驰（COROS�
 | 压缩 | GZIP | GZIP |
 | 缩放级别 | z9 - z13 | z8 - z13 |
 | 矢量图层 | 1 个：`Q`（字段：`F` 数字型，高程值） | 11 个：`J`, `K`, `P`, `L`, `N`, `O`, `B`, `A`, `I`, `F`, `H` |
-| 内容特征 | 等高线，沿线标注高程数值 | 道路、河流、建筑、地名等地物要素 |
+| 内容特征 | 等高线，沿线标注高程数值 | 道路、水体、地表覆盖、地名、POI 等要素（无独立建筑图层） |
 | 覆盖区域 | 按子目录分区（121, 123, 130, 131, 132） | 同 VCM，与 VCM 文件一一对应 |
 
-通过对真实瓦片的解码，VSM 各图层的语义与字段 `E`（分类码）已确认，其余常见字段包括 `X`（字符串/名称）、`C`、`b`（桥梁）、`j`（隧道）、`F`（高程）等：
+通过对真实瓦片的解码，VSM 各图层的语义与字段 `E`（分类码）已确认。除 `E` 外的常见字段：`X`（名称）、`C`（编号）、`N`（名称/编号）、`b`（桥梁）、`j`（隧道）、`i`（`L` 层 E13 的步行街 / 公园步道子类）、`F`（高程，仅 `H` 层）、`c`（`H` 层附加）。各层实际字段集合为 `J{E,X}`、`K{E,X}`、`P{C,E,N,X}`、`L{C,E,X,b,i,j}`、`N{E,N}`、`O{E,X}`、`B{E}`、`A{E,X}`、`I{E,X}`、`F{E}`、`H{E,F,X,c}`：
 
 | 图层 | 几何 | 语义（`E` 分类码） |
 |---|---|---|
@@ -59,7 +59,7 @@ VCM（等高线）和 VSM（矢量要素）地图数据来源于高驰（COROS�
 | `F` | 面 | 地表覆盖：1 林地、2 铁路走廊、4 农田、7 城市公园/绿地 |
 | `N` | 面 | 水体（河、湖、库、塘） |
 | `P` / `O` | 线 | 低 / 高缩放级别水系线 |
-| `K` | 点 | POI：1 商店、5 快餐、6 公园、7/8 车站、11 露营、19 咖啡、25 医院、36 加油、52 停车等 |
+| `K` | 点 | POI：1 便利店、4 高尔夫、5 快餐、6 公园、7 公交站、8 火车站、11 露营、13 超市、19 咖啡、22 酒吧、25 医院、27 景点、30 体育场、36 加油、52 停车；未列出的分类回落为通用点图标 |
 | `J` | 点 | 行政地名（市、区、镇、村、街道） |
 | `H` / `A` | 点 | 山峰（`F`=高程）/ 机场 |
 | `B` / `I` | 线/面 | 机场用地 / 自然保护区 |
@@ -162,6 +162,16 @@ for (var i = 0; i < allEntries.length; i++) {
 }
 ```
 
+### 增量加载与去重
+
+同一会话内可反复选择文件夹或拖入文件，新文件是**追加**进既有索引，而非替换：
+
+- 去重表 `accumulatedNames` 按路径记录已索引文件。**两条通道的键口径不同**——文件夹通道用 `webkitRelativePath || name`，原生拖拽通道用完整磁盘路径；口径混用会让同一文件被索引两次。
+- 索引开始前先预扫一遍统计 `totalNew`：后缀合法、未去重、`detectType` 能识别，三者同时满足才计数，保证进度条能走到 100%。
+- 循环中每处理 10 个（拖拽通道 20 个）文件调用一次 `yieldUI()` 让出主线程，避免面对数百个文件时界面冻结。
+- 只有 `allEntries` 从空变为非空（首次加载）时才 `fitBounds` 并把缩放抬升到数据的 `globalMinZoom`；追加文件不会重置用户当前视野。
+- 「清除所有」按钮卸载全部已加载源、清空 `allEntries` 与去重表，并把面板状态复位。
+
 ### 渲染策略（语义化配色，对齐 COROS 手表外观）
 
 旧版按图层索引黄金角（`(i * 137.508) % 360`）生成随机色，现改为按图层语义与字段 `E` 分类着色，外观对齐手表的浅色户外风格，并提供浅色/深色两套调色板（`PALETTES`，默认浅色）。切换主题时，`applyPalette()` 遍历每个源记录的 `bindings`，调用 `setPaintProperty` 实时重设颜色，无需重建图层。
@@ -199,18 +209,20 @@ function detectType(file) {
 ## 项目结构
 
 ```
-map-app/
+map viewer/
 ├── src/                          # 前端资源（Tauri 直接 serve）
 │   ├── index.html                # 唯一的前端文件，包含全部 HTML/CSS/JS
 │   ├── maplibre-gl.js            # MapLibre GL JS 4.7.1（本地）
 │   ├── maplibre-gl.css           # MapLibre GL JS 样式（本地）
 │   ├── pmtiles.js                # PMTiles JS 4.4.1（本地）
 │   ├── fonts/                    # Noto Sans 字体（本地离线）
+│   │   ├── OFL.txt               # 字体许可证（OFL-1.1）
 │   │   ├── Noto Sans Regular/    # 主要标注字体
 │   │   ├── Noto Sans Medium/
 │   │   ├── Noto Sans Italic/
 │   │   └── Noto Sans Devanagari Regular v1/
 │   └── sprites/                  # 地图精灵图（本地离线）
+│       ├── v3/                   # Protomaps 旧版精灵（black/light/dark/white/grayscale）
 │       ├── v4/                   # Protomaps 彩色徽章精灵（black/light/dark/white/grayscale）
 │       └── coros/                # 构建期生成的蓝色圆形 POI 精灵（sprite.png/json + @2x）
 │
@@ -233,7 +245,7 @@ map-app/
 │       └── lib.rs                # Tauri Builder 初始化 + Rust IPC 命令
 │
 ├── package.json                  # Node.js 依赖（仅 @tauri-apps/cli）
-├── map/                          # 本地地图数据（不提交 git）：VCM/、VSM/ 各区域 .t 文件
+├── Map/                          # 本地地图数据（不提交 git）：VCM/、VSM/ 各区域 .t 文件
 ├── tools/                        # 构建期/分析脚本（不进入应用运行时），含 COROS 精灵生成器
 └── ...                           # README / AGENTS.md 等
 ```
@@ -253,10 +265,10 @@ Tauri 的 `frontendDist` 指向 `src/` 目录，`index.html` 中通过相对路�
 | 组件 | 位置 | 功能 |
 |---|---|---|
 | 自定义标题栏 | 顶部 36px | 应用名 + 拖拽区域 + 最小化/最大化/关闭按钮 |
-| 控件面板 | 左上角 | 文件夹选择（虚线拖拽区，支持原生拖拽）、VCM 开关、浅色/深色主题切换、统计卡片、进度条、清除所有按钮；面板可折叠 |
+| 控件面板 | 左上角 | 文件夹选择（虚线拖拽区，支持原生拖拽）、VCM 开关、浅色/深色主题切换、统计卡片（已索引 / 已加载 / 缩放）、进度条、清除所有按钮；面板可折叠 |
 | 缩放控件 | 右上角 | 统一缩放组件：缩放级别显示 + 放大/缩小按钮 + 比例尺 |
-| 属性检查 | 左下角 | 点击要素后显示属性表格，支持复制全部 |
-| 调试日志 | 右下角 | 默认隐藏，点击圆形按钮切换，错误行红色竖线标记 |
+| 属性检查 | 左下角 | 点击要素后显示属性表格，支持复制全部；半透明面要素不会抢在线/点要素之前 |
+| 调试日志 | 右下角 | 默认隐藏，点击圆形按钮切换；错误行红色竖线、警告行黄色竖线标记，最多保留 80 行 |
 | 状态栏 | 底部 28px | 鼠标坐标、当前瓦片 z/x/y、加载状态指示灯 |
 
 ### 窗口自定义
@@ -265,9 +277,9 @@ Tauri 配置 `decorations: false` 移除系统标题栏，由 HTML 自绘标题�
 
 ```javascript
 var appWindow = window.__TAURI__.window.getCurrentWindow();
-btn-min.onclick = function () { appWindow.minimize(); };
-btn-max.onclick = function () { appWindow.toggleMaximize(); };
-btn-close.onclick = function () { appWindow.close(); };
+document.getElementById("btn-min").onclick = function () { appWindow.minimize(); };
+document.getElementById("btn-max").onclick = function () { appWindow.toggleMaximize(); };
+document.getElementById("btn-close").onclick = function () { appWindow.close(); };
 ```
 
 ## 构建
@@ -281,7 +293,6 @@ btn-close.onclick = function () { appWindow.close(); };
 ### 构建步骤
 
 ```bash
-cd map-app
 npm install
 npx tauri build
 ```
@@ -292,8 +303,8 @@ npx tauri build
 
 | 文件 | 大小 | 说明 |
 |---|---|---|
-| `src-tauri/target/release/map-app.exe` | ~8.6 MB | 绿色版可执行文件，可直接运行 |
-| `src-tauri/target/release/bundle/nsis/MapViewer_0.2.1_x64-setup.exe` | ~6.7 MB | NSIS 安装包 |
+| `src-tauri/target/release/map-app.exe` | ~8.7 MB | 绿色版可执行文件，可直接运行 |
+| `src-tauri/target/release/bundle/nsis/MapViewer_0.2.1_x64-setup.exe` | ~6.8 MB | NSIS 安装包 |
 
 ### 开发模式
 
@@ -318,7 +329,7 @@ panic = "abort"     # panic 时直接终止，减小二进制体积
 
 ## 数据获取
 
-地图数据存储在 COROS 手表内部存储的 `map` 文件夹中，内含 `VCM` 和 `VSM` 两个子目录。将整个 `map` 文件夹复制到电脑后，通过本程序选择该文件夹即可加载浏览。开发时也可直接将其放在项目根目录（`map/`，已被 `.gitignore` 忽略）。
+地图数据存储在 COROS 手表内部存储的 `map` 文件夹中，内含 `VCM` 和 `VSM` 两个子目录。将整个 `map` 文件夹复制到电脑后，通过本程序选择该文件夹即可加载浏览。开发时也可直接将其放在项目根目录（`Map/`，已被 `.gitignore` 忽略）。
 
 > 注意：地图数据文件体积较大（约 6 GB），未包含在本仓库中，请自行从手表提取。v0.2.0 起也支持通用 `.pmtiles` 格式文件。
 

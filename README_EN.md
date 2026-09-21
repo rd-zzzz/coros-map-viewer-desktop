@@ -18,7 +18,7 @@ Core technology stack:
 |---|---|---|
 | Desktop shell | Tauri 2 (Rust) | Window management, system integration, packaged as a single-file exe |
 | Map rendering | MapLibre GL JS 4.7 | WebGL vector tile rendering engine |
-| Tile protocol | PMTiles JS 4.4 | Parses PMTiles V3 format, reads tiles on demand via HTTP Range Requests |
+| Tile protocol | PMTiles JS 4.4 | Parses PMTiles V3 format, reads tiles on demand by offset/length (via Rust IPC locally, not HTTP) |
 | Fonts / Icons | Noto Sans + custom COROS sprite | Local offline text labels; blue round POI icons (generated at build time) |
 
 ## Data Format
@@ -48,10 +48,10 @@ Each `.t` or `.pmtiles` file is essentially a standard PMTiles V3 archive, consi
 | Compression | GZIP | GZIP |
 | Zoom levels | z9 - z13 | z8 - z13 |
 | Vector layers | 1: `Q` (field: `F` numeric, elevation value) | 11: `J`, `K`, `P`, `L`, `N`, `O`, `B`, `A`, `I`, `F`, `H` |
-| Content | Contour lines with elevation labels along the lines | Roads, rivers, buildings, place names and other geographic features |
+| Content | Contour lines with elevation labels along the lines | Roads, water, land cover, place names, POIs and other features (no separate building layer) |
 | Coverage | Partitioned by subdirectory (121, 123, 130, 131, 132) | Same as VCM, one-to-one correspondence with VCM files |
 
-By decoding real tiles, the semantics of the VSM layers and the field `E` (classification code) have been confirmed. Other common fields include `X` (string/name), `C`, `b` (bridge), `j` (tunnel), `F` (elevation), etc.:
+By decoding real tiles, the semantics of the VSM layers and the field `E` (classification code) have been confirmed. Besides `E`, the common fields are: `X` (name), `C` (code), `N` (name/code), `b` (bridge), `j` (tunnel), `i` (pedestrian-street / park-path subclass of `L` E13), `F` (elevation, `H` layer only), `c` (extra field on `H`). The actual field sets per layer are `J{E,X}`, `K{E,X}`, `P{C,E,N,X}`, `L{C,E,X,b,i,j}`, `N{E,N}`, `O{E,X}`, `B{E}`, `A{E,X}`, `I{E,X}`, `F{E}`, `H{E,F,X,c}`:
 
 | Layer | Geometry | Semantics (`E` codes) |
 |---|---|---|
@@ -59,7 +59,7 @@ By decoding real tiles, the semantics of the VSM layers and the field `E` (class
 | `F` | Polygon | Land cover: 1 forest, 2 rail corridor, 4 farmland, 7 urban park/green space |
 | `N` | Polygon | Water bodies (rivers, lakes, reservoirs, ponds) |
 | `P` / `O` | Line | Low / high zoom water lines |
-| `K` | Point | POIs: 1 shop, 5 fast food, 6 park, 7/8 station, 11 campsite, 19 cafe, 25 hospital, 36 fuel, 52 parking, etc. |
+| `K` | Point | POIs: 1 convenience, 4 golf, 5 fast food, 6 park, 7 bus stop, 8 train station, 11 campsite, 13 supermarket, 19 cafe, 22 bar, 25 hospital, 27 attraction, 30 stadium, 36 fuel, 52 parking; unlisted codes fall back to a generic dot icon |
 | `J` | Point | Administrative place names (city, district, town, village, street) |
 | `H` / `A` | Point | Peaks (`F`=elevation) / airport |
 | `B` / `I` | Line/Polygon | Airport land / protected area |
@@ -164,6 +164,16 @@ for (var i = 0; i < allEntries.length; i++) {
 }
 ```
 
+### Incremental Loading & Deduplication
+
+Within one session you can pick a folder or drop files repeatedly; new files are **appended** to the existing index rather than replacing it:
+
+- The dedup table `accumulatedNames` records indexed files by path. **The two channels use different key schemes** — the folder channel keys on `webkitRelativePath || name`, the native drag-drop channel on the full disk path. Mixing the schemes indexes the same file twice.
+- Before indexing, a pre-scan computes `totalNew`: a file counts only if the extension is valid, it is not already deduped, and `detectType` can classify it — otherwise the progress bar never reaches 100%.
+- The loop calls `yieldUI()` every 10 files (20 in the drag-drop channel) to yield the main thread, keeping the UI responsive with hundreds of files.
+- `fitBounds` (and raising the zoom to the data's `globalMinZoom`) only happens when `allEntries` goes from empty to non-empty, i.e. on the first load; appending files never resets the user's current view.
+- The "Clear all" button unloads every loaded source, clears `allEntries` and the dedup table, and resets the panel state.
+
 ### Rendering Strategy (semantic colors, matching the COROS watch look)
 
 Previously colors were generated randomly by golden angle based on layer index (`(i * 137.508) % 360`). Colors are now assigned by layer semantics and the field `E`, matching the watch's light outdoor style, with two palettes (`PALETTES`, light by default). On theme switch, `applyPalette()` iterates over each source's recorded `bindings` and calls `setPaintProperty` to recolor layers live without rebuilding them.
@@ -201,18 +211,20 @@ function detectType(file) {
 ## Project Structure
 
 ```
-map-app/
+map viewer/
 ├── src/                          # Frontend assets (served directly by Tauri)
 │   ├── index.html                # Single frontend file, contains all HTML/CSS/JS
 │   ├── maplibre-gl.js            # MapLibre GL JS 4.7.1 (local)
 │   ├── maplibre-gl.css           # MapLibre GL JS stylesheet (local)
 │   ├── pmtiles.js                # PMTiles JS 4.4.1 (local)
 │   ├── fonts/                    # Noto Sans fonts (local offline)
+│   │   ├── OFL.txt               # Font license (OFL-1.1)
 │   │   ├── Noto Sans Regular/    # Primary label font
 │   │   ├── Noto Sans Medium/
 │   │   ├── Noto Sans Italic/
 │   │   └── Noto Sans Devanagari Regular v1/
 │   └── sprites/                  # Map sprites (local, offline)
+│       ├── v3/                   # Legacy Protomaps sprites (black/light/dark/white/grayscale)
 │       ├── v4/                   # Protomaps colored badge sprites (black/light/dark/white/grayscale)
 │       └── coros/                # Build-generated blue round POI sprite (sprite.png/json + @2x)
 │
@@ -235,7 +247,7 @@ map-app/
 │       └── lib.rs                # Tauri Builder initialization + Rust IPC commands
 │
 ├── package.json                  # Node.js dependencies (only @tauri-apps/cli)
-├── map/                          # Local map data (not committed): VCM/, VSM/ regional .t files
+├── Map/                          # Local map data (not committed): VCM/, VSM/ regional .t files
 ├── tools/                        # Build-time/analysis scripts (not part of app runtime), incl. COROS sprite builder
 └── ...                           # README / AGENTS.md, etc.
 ```
@@ -255,10 +267,10 @@ All external CDN dependencies have been localized:
 | Component | Position | Function |
 |---|---|---|
 | Custom title bar | Top 36px | App name + drag area + minimize/maximize/close buttons |
-| Control panel | Top-left | Folder selection (dashed drag area, supports native drag-drop), VCM toggle, light/dark theme toggle, statistics cards, progress bar, clear all button; panel is collapsible |
+| Control panel | Top-left | Folder selection (dashed drag area, supports native drag-drop), VCM toggle, light/dark theme toggle, statistics cards (indexed / active / zoom), progress bar, clear all button; panel is collapsible |
 | Zoom widget | Top-right | Unified zoom component: zoom level display + zoom in/out buttons + scale bar |
-| Attribute inspector | Bottom-left | Attribute table shown on feature click, supports copy-all |
-| Debug log | Bottom-right | Hidden by default, toggled via circular button, error lines marked with red left border |
+| Attribute inspector | Bottom-left | Attribute table shown on feature click, supports copy-all; translucent area features never shadow line/point features |
+| Debug log | Bottom-right | Hidden by default, toggled via circular button; error lines get a red left border and warnings a yellow one, 80 lines kept at most |
 | Status bar | Bottom 28px | Mouse coordinates, current tile z/x/y, loading status indicator |
 
 ### Window Customization
@@ -267,9 +279,9 @@ Tauri is configured with `decorations: false` to remove the system title bar, re
 
 ```javascript
 var appWindow = window.__TAURI__.window.getCurrentWindow();
-btn-min.onclick = function () { appWindow.minimize(); };
-btn-max.onclick = function () { appWindow.toggleMaximize(); };
-btn-close.onclick = function () { appWindow.close(); };
+document.getElementById("btn-min").onclick = function () { appWindow.minimize(); };
+document.getElementById("btn-max").onclick = function () { appWindow.toggleMaximize(); };
+document.getElementById("btn-close").onclick = function () { appWindow.close(); };
 ```
 
 ## Building
@@ -283,7 +295,6 @@ btn-close.onclick = function () { appWindow.close(); };
 ### Build Steps
 
 ```bash
-cd map-app
 npm install
 npx tauri build
 ```
@@ -294,8 +305,8 @@ The first build downloads and compiles Rust dependencies (Tauri + wry + tao), ta
 
 | File | Size | Description |
 |---|---|---|
-| `src-tauri/target/release/map-app.exe` | ~8.6 MB | Portable executable, can be run directly |
-| `src-tauri/target/release/bundle/nsis/MapViewer_0.2.1_x64-setup.exe` | ~6.7 MB | NSIS installer |
+| `src-tauri/target/release/map-app.exe` | ~8.7 MB | Portable executable, can be run directly |
+| `src-tauri/target/release/bundle/nsis/MapViewer_0.2.1_x64-setup.exe` | ~6.8 MB | NSIS installer |
 
 ### Development Mode
 
@@ -320,7 +331,7 @@ panic = "abort"     # Abort on panic, reducing binary size
 
 ## Data Acquisition
 
-The map data is stored in the `map` folder on the internal storage of a COROS watch, containing two subdirectories: `VCM` and `VSM`. Copy the entire `map` folder to your computer, then select it in the application to load and browse the maps. During development you can also place it directly in the project root (`map/`, already ignored by `.gitignore`).
+The map data is stored in the `map` folder on the internal storage of a COROS watch, containing two subdirectories: `VCM` and `VSM`. Copy the entire `map` folder to your computer, then select it in the application to load and browse the maps. During development you can also place it directly in the project root (`Map/`, already ignored by `.gitignore`).
 
 > Note: The map data files are large (approximately 6 GB) and are not included in this repository. Please extract them from your watch directly. As of v0.2.0, generic `.pmtiles` format files are also supported.
 
