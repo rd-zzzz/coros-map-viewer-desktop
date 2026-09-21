@@ -705,6 +705,68 @@
         dbg("Protocol registered", "dbg-ok");
 
         /* ============================================================
+           Semantic Palettes — 必须早于 Map Init：初始背景色与各语义
+           图层构建器都要读取它（var 提升只给声明、不给赋值，放后面
+           会在初始化时拿到 undefined 并中断整个脚本）。
+        ============================================================ */
+        var PALETTES = {
+            light: {
+                bg: "#f0f2f8",
+                forest: "#d3e9c4",        // F E1 野生林地
+                farm: "#f0f1dd",          // F E4 农田
+                park: "#7fc9bf",          // F E7 城市公园/绿地（teal）
+                railcorridor: "#e9e8e4",  // F E2 铁路走廊
+                water: "#87c8d4",         // N 水体
+                protected: "#d6ecc6",     // I 保护区
+                airport: "#e5e6ea",       // B 机场用地
+                airportLine: "#b6b8bf",
+                roadArea: "#f2f1ec",      // L 道路面 polygon
+                motorway: "#f6c39c", motorwayCasing: "#e7a978",   // L E7,20
+                arterial: "#f8d3b4", arterialCasing: "#ecc09b",   // L E8,9
+                secondary: "#ffffff", secondaryCasing: "#d1d4d9", secondaryLow: "#c4c8cf", // L E10
+                local: "#ffffff", localCasing: "#dcdde0", localLow: "#d2d5d9",             // L E11-14,23
+                path: "#8b8e95",          // L E0 小路
+                trail: "#2b2b2e",         // L E29 登山步道（黑虚线）
+                rail: "#74777e",          // L E2 铁路
+                transit: "#3a86d1",       // L E3 地铁/BRT
+                waterLine: "#5cb1c2",     // P/O 水系线
+                roadLabel: "#3d3d43",
+                poiLabel: "#a1413c",
+                placeLabel: "#9b403b",
+                peakLabel: "#5c4c3c",
+                halo: "#ffffff",
+                contourMinor: "#d9c3a4", contourIndex: "#c49a6e"
+            },
+            dark: {
+                bg: "#15151f",
+                forest: "#263d22",
+                farm: "#2d2f23",
+                park: "#2c6e68",
+                railcorridor: "#23232b",
+                water: "#2a5d6f",
+                protected: "#293e25",
+                airport: "#26272e",
+                airportLine: "#55575f",
+                roadArea: "#2a2a32",
+                motorway: "#9a683d", motorwayCasing: "#6e4726",
+                arterial: "#8a6342", arterialCasing: "#66492e",
+                secondary: "#3a3c45", secondaryCasing: "#22232a", secondaryLow: "#2e3038",
+                local: "#34363f", localCasing: "#26272e", localLow: "#33353d",
+                path: "#888b93",
+                trail: "#c2c3ca",
+                rail: "#8a8d95",
+                transit: "#5aa0e0",
+                waterLine: "#4d93a8",
+                roadLabel: "#d4d5db",
+                poiLabel: "#e08a84",
+                placeLabel: "#dd867f",
+                peakLabel: "#c8b39c",
+                halo: "#14141c",
+                contourMinor: "#7a6a52", contourIndex: "#9a7d5a"
+            }
+        };
+
+        /* ============================================================
            Map Init
         ============================================================ */
         var isLightTheme = savedTheme === "light";
@@ -857,7 +919,8 @@
         };
 
         /* ============================================================
-           Semantic Style — Palettes, Draw Order & Layer Builders
+           Semantic Style — Draw Order & Layer Builders
+           （PALETTES 已前移至 Map Init 之前）
            ------------------------------------------------------------
            VSM 图层语义（经真实瓦片解码确认）：
              L 道路(线+面, E 分级)   K POI(点, E 分类)   J 行政地名(点)
@@ -867,62 +930,7 @@
            浅色主题对齐 COROS 手表：近白淡紫底、teal 绿地/水体、peach 主干道、
            白色次路、暗红地名、深灰路名、蓝色圆形 POI 图标、公园黑色虚步道。
         ============================================================ */
-        var PALETTES = {
-            light: {
-                bg: "#f0f2f8",
-                forest: "#d3e9c4",        // F E1 野生林地
-                farm: "#f0f1dd",          // F E4 农田
-                park: "#7fc9bf",          // F E7 城市公园/绿地（teal）
-                railcorridor: "#e9e8e4",  // F E2 铁路走廊
-                water: "#87c8d4",         // N 水体
-                protected: "#d6ecc6",     // I 保护区
-                airport: "#e5e6ea",       // B 机场用地
-                airportLine: "#b6b8bf",
-                roadArea: "#f2f1ec",      // L 道路面 polygon
-                motorway: "#f6c39c", motorwayCasing: "#e7a978",   // L E7,20
-                arterial: "#f8d3b4", arterialCasing: "#ecc09b",   // L E8,9
-                secondary: "#ffffff", secondaryCasing: "#d1d4d9", secondaryLow: "#c4c8cf", // L E10
-                local: "#ffffff", localCasing: "#dcdde0", localLow: "#d2d5d9",             // L E11-14,23
-                path: "#8b8e95",          // L E0 小路
-                trail: "#2b2b2e",         // L E29 登山步道（黑虚线）
-                rail: "#74777e",          // L E2 铁路
-                transit: "#3a86d1",       // L E3 地铁/BRT
-                waterLine: "#5cb1c2",     // P/O 水系线
-                roadLabel: "#3d3d43",
-                poiLabel: "#a1413c",
-                placeLabel: "#9b403b",
-                peakLabel: "#5c4c3c",
-                halo: "#ffffff",
-                contourMinor: "#d9c3a4", contourIndex: "#c49a6e"
-            },
-            dark: {
-                bg: "#15151f",
-                forest: "#263d22",
-                farm: "#2d2f23",
-                park: "#2c6e68",
-                railcorridor: "#23232b",
-                water: "#2a5d6f",
-                protected: "#293e25",
-                airport: "#26272e",
-                airportLine: "#55575f",
-                roadArea: "#2a2a32",
-                motorway: "#9a683d", motorwayCasing: "#6e4726",
-                arterial: "#8a6342", arterialCasing: "#66492e",
-                secondary: "#3a3c45", secondaryCasing: "#22232a", secondaryLow: "#2e3038",
-                local: "#34363f", localCasing: "#26272e", localLow: "#33353d",
-                path: "#888b93",
-                trail: "#c2c3ca",
-                rail: "#8a8d95",
-                transit: "#5aa0e0",
-                waterLine: "#4d93a8",
-                roadLabel: "#d4d5db",
-                poiLabel: "#e08a84",
-                placeLabel: "#dd867f",
-                peakLabel: "#c8b39c",
-                halo: "#14141c",
-                contourMinor: "#7a6a52", contourIndex: "#9a7d5a"
-            }
-        };
+        // PALETTES 定义已前移至 Map Init 之前（初始化即需读取）。
 
         // 绘制槽位：数组顺序即从底到顶；多源图层按槽位全局重排
         var SLOT_ORDER = [
