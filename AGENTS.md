@@ -92,7 +92,7 @@ PMTiles JS 的 Source 只需实现 `getKey()` 与 `getBytes(offset, length)`。�
 
 - **配色不再随机**：旧版按图层索引黄金角 `(i * 137.508) % 360` 生成随机 HSL；现改为按图层语义与字段 `E` 分类着色。两套调色板定义在 `src/index.html` 的 `PALETTES`（light/dark），切主题时由 `applyPalette()` 遍历每个源的 `bindings` 调 `setPaintProperty` 重设颜色。
 - **VSM 图层语义**（经真实瓦片解码确认，详见 index.html 注释）：`L` 道路（线+面，E 分级：7/19/20 高速、8/9 主干、10 次干、11–16/21/22/23 支路、0 小路、29 登山步道、2 铁路、3 地铁/BRT）；`F` 地表覆盖（E1 林地、E4 农田、E7 城市公园、E2 铁路走廊）；`N` 水体；`I` 保护区；`B` 机场用地；`P`/`O` 低/高 zoom 水系线；`K` POI（点，E 分类）；`J` 行政地名；`H` 山峰；`A` 机场点。
-- **道路绘制**：每个等级画 casing（描边）+ fill（铺面）两层；低 zoom 次/支路为浅灰细线、高 zoom 为白色铺面（`lowHighExpr` 随 zoom 插值），主干道/高速为 peach/salmon 色；E29 步道为黑色虚线（`line-dasharray`）。
+- **道路绘制**：每个等级画 casing（描边）+ fill（铺面）两层；低 zoom 次/支路为浅灰细线、高 zoom（约 z15）为白色铺面（`lowHighExpr` 随 zoom 插值），主干道/高速为 peach/salmon 色；E29 步道、以及 E13 中 `i`=19/23 的公园步道/步行街为黑色虚线（`line-dasharray`，后者在 local 过滤器中排除、并入 trail 层）。线宽刻意收窄以露出沿路 E7 绿带。名称字段为 `X`，道路名/POI 标签的 filter 与 text-field 都必须兼容 X。
 - **POI 图标**：使用 `src/sprites/coros/`（统一蓝色圆形 + 白色字形），由构建脚本 `tools/build-coros-sprite.js` 从 v4/light 白色字形掩膜生成；该精灵缺省不随主题变色。医院/停车/加油/露营/高尔夫为脚本手绘字形。
 - **VCM**：`Q` 层等高线，按 `F`（高程）`% 50` 区分首曲线 / 计曲线，淡棕褐色细线；hover 时提升不透明度（保留 feature-state）。
 - **全局叠放顺序**：所有图层按 `SLOT_ORDER`（自底向顶：地表/水体 → 道路（支路→高速）→ 步道/铁路 → 图标 → 各类文字）在每次 `loadEntry()` 后由 `reorderLayers()` 通过 `moveLayer` 重排，保证多源叠放一致。

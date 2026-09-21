@@ -1107,31 +1107,40 @@
             // 过滤器统一用新表达式语法（["get","E"] / ["in",needle,literal]）：
             // 旧式 ["in","E",...]、["==","E",10] 会让整个 ["all"] 被按 legacy
             // 解析，而其中 ["geometry-type"] 子表达式不合法，导致整层校验失败。
-            var LOCAL_ES = ["literal", [11, 12, 13, 14, 15, 16, 21, 22, 23]];
+            var LOCAL_ES = ["literal", [11, 12, 14, 15, 16, 21, 22, 23]];
             var MOTORWAY_ES = ["literal", [7, 19, 20]];
+            // E13 的 i19/i23 是公园步道/步行街，归 trail；其余 E13 才是普通支路
+            var PEDESTRIAN_I = ["literal", [19, 23]];
+            var localRoadFilter = ["any",
+                ["in", ["get", "E"], LOCAL_ES],
+                ["all", ["==", ["get", "E"], 13],
+                    ["!", ["in", ["coalesce", ["get", "i"], -1], PEDESTRIAN_I]]]];
 
             // 自下而上：支路 → 次干 → 主干 → 高速（高等级道路在交叉处压过下级）
-            line("casing-local", "casing-local", ["in", ["get", "E"], LOCAL_ES],
-                color("localCasing"), width(12, 0.6, 14, 3.2));
-            line("fill-local", "fill-local", ["in", ["get", "E"], LOCAL_ES],
-                function (pp) { return lowHighExpr(pp, "localLow", "local", 12, 13.8); },
-                width(12, 0.4, 14, 2));
+            line("casing-local", "casing-local", localRoadFilter,
+                color("localCasing"), width(13, 1.3, 16, 3.7));
+            line("fill-local", "fill-local", localRoadFilter,
+                function (pp) { return lowHighExpr(pp, "localLow", "local", 13, 15); },
+                width(13, 0.9, 16, 2.9));
             line("casing-secondary", "casing-secondary", ["==", ["get", "E"], 10],
-                color("secondaryCasing"), width(11, 0.6, 14, 4.4));
+                color("secondaryCasing"), width(13, 2.2, 16, 4.8));
             line("fill-secondary", "fill-secondary", ["==", ["get", "E"], 10],
-                function (pp) { return lowHighExpr(pp, "secondaryLow", "secondary", 11, 13.6); },
-                width(11, 0.4, 14, 3.2));
+                function (pp) { return lowHighExpr(pp, "secondaryLow", "secondary", 12.5, 14.5); },
+                width(13, 1.5, 16, 3.9));
             line("casing-arterial", "casing-arterial", ["in", ["get", "E"], ["literal", [8, 9]]],
-                color("arterialCasing"), width(10, 0.7, 14, 5.6));
+                color("arterialCasing"), width(12, 2.6, 15, 6));
             line("fill-arterial", "fill-arterial", ["in", ["get", "E"], ["literal", [8, 9]]],
-                color("arterial"), width(10, 0.5, 14, 4.2));
+                color("arterial"), width(12, 2, 15, 5));
             line("casing-motorway", "casing-motorway", ["in", ["get", "E"], MOTORWAY_ES],
-                color("motorwayCasing"), width(10, 0.7, 14, 7.6));
+                color("motorwayCasing"), width(12, 4, 15, 7.8));
             line("fill-motorway", "fill-motorway", ["in", ["get", "E"], MOTORWAY_ES],
-                color("motorway"), width(10, 0.5, 14, 6));
+                color("motorway"), width(12, 3.2, 15, 6.6));
             line("path", "path", ["==", ["get", "E"], 0],
                 color("path"), width(12, 0.5, 14, 1.3));
-            line("trail", "trail", ["==", ["get", "E"], 29],
+            line("trail", "trail",
+                ["any", ["==", ["get", "E"], 29],
+                    ["all", ["==", ["get", "E"], 13],
+                        ["in", ["coalesce", ["get", "i"], -1], PEDESTRIAN_I]]],
                 color("trail"), width(12, 0.7, 14, 1.8), [1.3, 0.9]);
             line("rail", "rail", ["==", ["get", "E"], 2],
                 color("rail"), width(10, 0.5, 14, 1.3), [2.4, 1.6]);
@@ -1141,9 +1150,11 @@
             // 道路名（沿道路走向）
             var idl = sn + "_roadlabel";
             addTagged(ctx, { id: idl, source: sn, "source-layer": "L", type: "symbol",
-                filter: ["all", ["==", ["geometry-type"], "LineString"], ["has", "name"]],
+                filter: ["all", ["==", ["geometry-type"], "LineString"],
+                    ["any", ["has", "X"], ["has", "name"]]],
                 minzoom: 11.5,
-                layout: { "symbol-placement": "line", "text-field": ["get", "name"],
+                layout: { "symbol-placement": "line",
+                    "text-field": ["coalesce", ["get", "name"], ["get", "X"]],
                     "text-font": ["Noto Sans Regular"],
                     "text-size": ["match", ["get", "E"],
                         7, 11, 19, 11, 20, 11, 8, 10.5, 9, 10.5, 10, 10, 9.5],
@@ -1174,7 +1185,8 @@
 
             var idl = sn + "_poilabel";
             addTagged(ctx, { id: idl, source: sn, "source-layer": "K", type: "symbol",
-                filter: ["all", ["==", ["geometry-type"], "Point"], ["has", "name"]],
+                filter: ["all", ["==", ["geometry-type"], "Point"],
+                    ["any", ["has", "X"], ["has", "name"]]],
                 minzoom: 13,
                 layout: { "text-field": ["coalesce", ["get", "name"], ["get", "X"]],
                     "text-font": ["Noto Sans Regular"],
