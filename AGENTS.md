@@ -91,7 +91,7 @@ PMTiles JS 的 Source 只需实现 `getKey()` 与 `getBytes(offset, length)`。�
 ### 4. 渲染策略（语义化配色，对齐 COROS 手表）
 
 - **配色不再随机**：旧版按图层索引黄金角 `(i * 137.508) % 360` 生成随机 HSL；现改为按图层语义与字段 `E` 分类着色。两套调色板定义在 `src/index.html` 的 `PALETTES`（light/dark），切主题时由 `applyPalette()` 遍历每个源的 `bindings` 调 `setPaintProperty` 重设颜色。
-- **VSM 图层语义**（经真实瓦片解码确认，详见 index.html 注释）：`L` 道路（线+面，E 分级：7/20 高速、8/9 主干、10 次干、11–14/23 支路、0 小路、29 登山步道、2 铁路、3 地铁/BRT）；`F` 地表覆盖（E1 林地、E4 农田、E7 城市公园、E2 铁路走廊）；`N` 水体；`I` 保护区；`B` 机场用地；`P`/`O` 低/高 zoom 水系线；`K` POI（点，E 分类）；`J` 行政地名；`H` 山峰；`A` 机场点。
+- **VSM 图层语义**（经真实瓦片解码确认，详见 index.html 注释）：`L` 道路（线+面，E 分级：7/19/20 高速、8/9 主干、10 次干、11–16/21/22/23 支路、0 小路、29 登山步道、2 铁路、3 地铁/BRT）；`F` 地表覆盖（E1 林地、E4 农田、E7 城市公园、E2 铁路走廊）；`N` 水体；`I` 保护区；`B` 机场用地；`P`/`O` 低/高 zoom 水系线；`K` POI（点，E 分类）；`J` 行政地名；`H` 山峰；`A` 机场点。
 - **道路绘制**：每个等级画 casing（描边）+ fill（铺面）两层；低 zoom 次/支路为浅灰细线、高 zoom 为白色铺面（`lowHighExpr` 随 zoom 插值），主干道/高速为 peach/salmon 色；E29 步道为黑色虚线（`line-dasharray`）。
 - **POI 图标**：使用 `src/sprites/coros/`（统一蓝色圆形 + 白色字形），由构建脚本 `tools/build-coros-sprite.js` 从 v4/light 白色字形掩膜生成；该精灵缺省不随主题变色。医院/停车/加油/露营/高尔夫为脚本手绘字形。
 - **VCM**：`Q` 层等高线，按 `F`（高程）`% 50` 区分首曲线 / 计曲线，淡棕褐色细线；hover 时提升不透明度（保留 feature-state）。

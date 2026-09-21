@@ -55,7 +55,7 @@ By decoding real tiles, the semantics of the VSM layers and the field `E` (class
 
 | Layer | Geometry | Semantics (`E` codes) |
 |---|---|---|
-| `L` | Line/Polygon | Roads: 7/20 motorway, 8/9 arterial, 10 secondary, 11–14/23 local, 0 path, 29 hiking trail, 2 railway, 3 metro/BRT |
+| `L` | Line/Polygon | Roads: 7/19/20 motorway, 8/9 arterial, 10 secondary, 11–16/21/22/23 local, 0 path, 29 hiking trail, 2 railway, 3 metro/BRT |
 | `F` | Polygon | Land cover: 1 forest, 2 rail corridor, 4 farmland, 7 urban park/green space |
 | `N` | Polygon | Water bodies (rivers, lakes, reservoirs, ponds) |
 | `P` / `O` | Line | Low / high zoom water lines |
