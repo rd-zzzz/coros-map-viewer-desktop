@@ -28,7 +28,7 @@ MapViewer 是一个基于 **Tauri 2 + MapLibre GL JS** 的**完全离线**桌面
 | 地图渲染 | MapLibre GL JS 4.7.x（WebGL 矢量瓦片） | `src/maplibre-gl.js` |
 | 瓦片协议 | PMTiles JS 4.4.x（PMTiles V3 解析 + 协议适配） | `src/pmtiles.js` |
 | 字体 | Noto Sans（Regular / Medium / Italic / Devanagari） | `src/fonts/` |
-| 精灵图 | Protomaps basemaps-assets v3 / v4，多主题 | `src/sprites/` |
+| 精灵图 | Protomaps basemaps-assets v3 / v4（多主题）+ 构建期生成的 coros 蓝色圆形图标 | `src/sprites/` |
 
 ## 项目结构
 
@@ -39,7 +39,7 @@ map viewer/
 │   ├── maplibre-gl.js / .css     # MapLibre GL JS（本地）
 │   ├── pmtiles.js                # PMTiles JS（本地）
 │   ├── fonts/                    # Noto Sans 字体（.pbf，离线）
-│   └── sprites/v3/, v4/          # 多主题精灵图（black/light/dark/white/grayscale）
+│   └── sprites/                  # v3/、v4/ 多主题精灵；coros/ 为构建期生成的蓝色圆形 POI 图标
 ├── src-tauri/
 │   ├── Cargo.toml / Cargo.lock   # Rust 依赖与版本锁定
 │   ├── tauri.conf.json           # Tauri 窗口、打包、版本配置
@@ -51,9 +51,13 @@ map viewer/
 │       ├── main.rs               # 入口，调用 lib::run()
 │       └── lib.rs                # Tauri Builder + IPC 命令实现
 ├── package.json                  # 仅依赖 @tauri-apps/cli
+├── map/                          # 本地地图数据（不提交 git）：VCM/ 与 VSM/，各含区域子目录，内为 .t 文件
+├── tools/                        # 构建期/分析用 Node 脚本（不进入应用运行时），如 COROS 图标精灵生成器
 ├── README.md / README_EN.md      # 中文 / 英文说明（须同步维护）
 └── AGENTS.md                     # 本文件
 ```
+
+> **地图数据位置**：手表地图包放在项目根目录的 `map/` 文件夹，结构为 `map/VCM/<区域>/*.t`（等高线）与 `map/VSM/<区域>/*.t`（矢量要素）。这些 `.t` 数据体积约 6 GB，**不得提交 git**（见文末 Git 约定）；应用运行时由用户自行选择该文件夹或拖入。
 
 ## 架构要点（修改相关代码前必读）
 
@@ -84,12 +88,16 @@ PMTiles JS 的 Source 只需实现 `getKey()` 与 `getBytes(offset, length)`。�
 - **首次定位**：两条索引通道都只在 `allEntries` 入口为空（`wasEmpty`）时才 `fitBounds`，追加文件不得重置用户当前视野。
 - **样式未就绪重试**：`updateViewport()` 在 `!map.isStyleLoaded()` 时最多重试 10 次（间隔 200ms）。计数器 `vpRetries` 只在**确实排入了一次重试**时自增，且用 `vpRetryTimer` 保证同一时刻只有一个待执行重试——否则鼠标移动会经 file-drop 的透明 `<input>` 高频触发本函数，把预算在一次样式切换内烧光，导致视口刷新永久丢失。
 
-### 4. 渲染策略
+### 4. 渲染策略（语义化配色，对齐 COROS 手表）
 
-- **VCM**：每个 `vector_layer` 只创建 `line` 图层，颜色按图层索引的黄金角色相分配 `(i * 137.508) % 360`，线宽随 zoom 插值；hover 时线宽加粗、不透明度提升。
-- **VSM / generic**：依据 Metadata 中的 `vector_layers`，按几何类型创建 `fill`（Polygon）、`line`（LineString 与 Polygon 描边）、`circle`（Point）、`symbol`（文字标注）图层。
-- **要素 id（`promoteId`）**：hover 的 `feature-state` 依赖要素 id。VCM 提升高程字段 `F`；VSM / generic 为每个 source-layer 提升数字字段 `E`（字段缺失时 id 为空，无副作用）。
-- **类型识别 `detectType`**：优先匹配路径中的 `VCM` / `VSM` 目录，其次匹配文件名 `C` / `S` 前缀，最后按 `.pmtiles` 后缀归为 generic。
+- **配色不再随机**：旧版按图层索引黄金角 `(i * 137.508) % 360` 生成随机 HSL；现改为按图层语义与字段 `E` 分类着色。两套调色板定义在 `src/index.html` 的 `PALETTES`（light/dark），切主题时由 `applyPalette()` 遍历每个源的 `bindings` 调 `setPaintProperty` 重设颜色。
+- **VSM 图层语义**（经真实瓦片解码确认，详见 index.html 注释）：`L` 道路（线+面，E 分级：7/20 高速、8/9 主干、10 次干、11–14/23 支路、0 小路、29 登山步道、2 铁路、3 地铁/BRT）；`F` 地表覆盖（E1 林地、E4 农田、E7 城市公园、E2 铁路走廊）；`N` 水体；`I` 保护区；`B` 机场用地；`P`/`O` 低/高 zoom 水系线；`K` POI（点，E 分类）；`J` 行政地名；`H` 山峰；`A` 机场点。
+- **道路绘制**：每个等级画 casing（描边）+ fill（铺面）两层；低 zoom 次/支路为浅灰细线、高 zoom 为白色铺面（`lowHighExpr` 随 zoom 插值），主干道/高速为 peach/salmon 色；E29 步道为黑色虚线（`line-dasharray`）。
+- **POI 图标**：使用 `src/sprites/coros/`（统一蓝色圆形 + 白色字形），由构建脚本 `tools/build-coros-sprite.js` 从 v4/light 白色字形掩膜生成；该精灵缺省不随主题变色。医院/停车/加油/露营/高尔夫为脚本手绘字形。
+- **VCM**：`Q` 层等高线，按 `F`（高程）`% 50` 区分首曲线 / 计曲线，淡棕褐色细线；hover 时提升不透明度（保留 feature-state）。
+- **全局叠放顺序**：所有图层按 `SLOT_ORDER`（自底向顶：地表/水体 → 道路（支路→高速）→ 步道/铁路 → 图标 → 各类文字）在每次 `loadEntry()` 后由 `reorderLayers()` 通过 `moveLayer` 重排，保证多源叠放一致。
+- **要素 id（`promoteId`）**：VCM 提升高程字段 `F`；VSM / generic 为每个 source-layer 提升数字字段 `E`（缺失则 id 为空，无副作用）。
+- **类型识别 `detectType`**：优先匹配路径中的 `VCM` / `VSM` 目录，其次匹配文件名 `C` / `S` 前缀，最后按 `.pmtiles` 后缀归为 generic（generic 保留按几何类型 + 随机色的回退渲染）。
 
 ### 5. 自定义窗口
 

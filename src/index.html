@@ -610,39 +610,18 @@
            Theme Toggle
         ============================================================ */
         var themeCheckbox = document.getElementById("theme-toggle");
-        var savedTheme = localStorage.getItem("mapviewer-theme") || "dark";
+        // 默认浅色户外主题（对齐 COROS 手表外观）；v2 键忽略早期版本残留的 dark
+        var savedTheme = localStorage.getItem("mapviewer-theme-v2") || "light";
         if (savedTheme === "light") {
             document.body.classList.add("light-theme");
             themeCheckbox.checked = true;
         }
 
-        function updateMapLabelColors(isLight) {
-            var tc = isLight ? "#222" : "#eee";
-            var hc = isLight ? "#fff" : "#111";
-            var cs = isLight ? "#555" : "#fff";
-            for (var sn in loadedSources) {
-                var ids = loadedSources[sn].ids;
-                for (var i = 0; i < ids.length; i++) {
-                    try {
-                        if (!map.getLayer(ids[i])) continue;
-                        if (ids[i].indexOf("_label") === ids[i].length - 6) {
-                            map.setPaintProperty(ids[i], "text-color", tc);
-                            map.setPaintProperty(ids[i], "text-halo-color", hc);
-                        } else if (ids[i].indexOf("_circle") === ids[i].length - 7) {
-                            map.setPaintProperty(ids[i], "circle-stroke-color", cs);
-                        }
-                    } catch (e) {}
-                }
-            }
-        }
-
         themeCheckbox.addEventListener("change", function () {
-            document.body.classList.toggle("light-theme", themeCheckbox.checked);
-            localStorage.setItem("mapviewer-theme", themeCheckbox.checked ? "light" : "dark");
-            if (map && map.getStyle()) {
-                map.setPaintProperty("background", "background-color", themeCheckbox.checked ? "#e8e6e1" : "#1a1a2e");
-                updateMapLabelColors(themeCheckbox.checked);
-            }
+            var isLight = themeCheckbox.checked;
+            document.body.classList.toggle("light-theme", isLight);
+            localStorage.setItem("mapviewer-theme-v2", isLight ? "light" : "dark");
+            if (map && map.getStyle()) applyPalette(isLight ? "light" : "dark");
         });
 
         /* ============================================================
@@ -728,7 +707,8 @@
         /* ============================================================
            Map Init
         ============================================================ */
-        var isLightTheme = document.body.classList.contains("light-theme");
+        var isLightTheme = savedTheme === "light";
+        var initialPalette = PALETTES[isLightTheme ? "light" : "dark"];
         var map = new maplibregl.Map({
             container: "map",
             minZoom: 8,
@@ -738,12 +718,12 @@
             style: {
                 version: 8,
                 glyphs: "fonts/{fontstack}/{range}.pbf",
-                sprite: "sprites/v4/black",
+                sprite: "sprites/coros/sprite",
                 sources: {},
                 layers: [{
                     id: "background",
                     type: "background",
-                    paint: { "background-color": isLightTheme ? "#e8e6e1" : "#1a1a2e" }
+                    paint: { "background-color": initialPalette.bg }
                 }]
             }
         });
@@ -877,6 +857,423 @@
         };
 
         /* ============================================================
+           Semantic Style — Palettes, Draw Order & Layer Builders
+           ------------------------------------------------------------
+           VSM 图层语义（经真实瓦片解码确认）：
+             L 道路(线+面, E 分级)   K POI(点, E 分类)   J 行政地名(点)
+             P 低zoom 水系线   O 高zoom 水系线   H 山峰(点)   A 机场点
+             F 地表覆盖(面)   N 水体(面)   B 机场用地(线+面)   I 保护区(面)
+           VCM：Q 等高线，F=高程。
+           浅色主题对齐 COROS 手表：近白淡紫底、teal 绿地/水体、peach 主干道、
+           白色次路、暗红地名、深灰路名、蓝色圆形 POI 图标、公园黑色虚步道。
+        ============================================================ */
+        var PALETTES = {
+            light: {
+                bg: "#f0f2f8",
+                forest: "#d3e9c4",        // F E1 野生林地
+                farm: "#f0f1dd",          // F E4 农田
+                park: "#7fc9bf",          // F E7 城市公园/绿地（teal）
+                railcorridor: "#e9e8e4",  // F E2 铁路走廊
+                water: "#87c8d4",         // N 水体
+                protected: "#d6ecc6",     // I 保护区
+                airport: "#e5e6ea",       // B 机场用地
+                airportLine: "#b6b8bf",
+                roadArea: "#f2f1ec",      // L 道路面 polygon
+                motorway: "#f6c39c", motorwayCasing: "#e7a978",   // L E7,20
+                arterial: "#f8d3b4", arterialCasing: "#ecc09b",   // L E8,9
+                secondary: "#ffffff", secondaryCasing: "#d1d4d9", secondaryLow: "#c4c8cf", // L E10
+                local: "#ffffff", localCasing: "#dcdde0", localLow: "#d2d5d9",             // L E11-14,23
+                path: "#8b8e95",          // L E0 小路
+                trail: "#2b2b2e",         // L E29 登山步道（黑虚线）
+                rail: "#74777e",          // L E2 铁路
+                transit: "#3a86d1",       // L E3 地铁/BRT
+                waterLine: "#5cb1c2",     // P/O 水系线
+                roadLabel: "#3d3d43",
+                poiLabel: "#a1413c",
+                placeLabel: "#9b403b",
+                peakLabel: "#5c4c3c",
+                halo: "#ffffff",
+                contourMinor: "#d9c3a4", contourIndex: "#c49a6e"
+            },
+            dark: {
+                bg: "#15151f",
+                forest: "#263d22",
+                farm: "#2d2f23",
+                park: "#2c6e68",
+                railcorridor: "#23232b",
+                water: "#2a5d6f",
+                protected: "#293e25",
+                airport: "#26272e",
+                airportLine: "#55575f",
+                roadArea: "#2a2a32",
+                motorway: "#9a683d", motorwayCasing: "#6e4726",
+                arterial: "#8a6342", arterialCasing: "#66492e",
+                secondary: "#3a3c45", secondaryCasing: "#22232a", secondaryLow: "#2e3038",
+                local: "#34363f", localCasing: "#26272e", localLow: "#33353d",
+                path: "#888b93",
+                trail: "#c2c3ca",
+                rail: "#8a8d95",
+                transit: "#5aa0e0",
+                waterLine: "#4d93a8",
+                roadLabel: "#d4d5db",
+                poiLabel: "#e08a84",
+                placeLabel: "#dd867f",
+                peakLabel: "#c8b39c",
+                halo: "#14141c",
+                contourMinor: "#7a6a52", contourIndex: "#9a7d5a"
+            }
+        };
+
+        // 绘制槽位：数组顺序即从底到顶；多源图层按槽位全局重排
+        var SLOT_ORDER = [
+            "landcover", "water", "protected", "airportfill", "roadarea", "contour",
+            "casing-local", "fill-local", "casing-secondary", "fill-secondary",
+            "casing-arterial", "fill-arterial", "casing-motorway", "fill-motorway",
+            "path", "trail", "rail", "transit", "waterline", "airportline",
+            "airport-icon", "peak-icon", "poi-icon",
+            "road-label", "peak-label", "poi-label", "place-label"
+        ];
+        var layerSlotMap = {};
+
+        function currentThemeName() {
+            return document.body.classList.contains("light-theme") ? "light" : "dark";
+        }
+
+        function addTagged(ctx, spec, slot) {
+            map.addLayer(spec);
+            layerSlotMap[spec.id] = slot;
+            ctx.ids.push(spec.id);
+        }
+
+        function bindPaint(ctx, id, prop, make) {
+            ctx.bindings.push({ id: id, prop: prop, make: make });
+        }
+
+        // moveLayer 无第二参数时移到最顶；按槽位自底向顶遍历即得到全局正确叠放顺序
+        function reorderLayers() {
+            for (var s = 0; s < SLOT_ORDER.length; s++) {
+                var slot = SLOT_ORDER[s];
+                for (var id in layerSlotMap) {
+                    if (layerSlotMap[id] === slot && map.getLayer(id)) map.moveLayer(id);
+                }
+            }
+        }
+
+        function applyPalette(name) {
+            var p = PALETTES[name];
+            try { map.setPaintProperty("background", "background-color", p.bg); } catch (e) {}
+            for (var sn in loadedSources) {
+                var bs = loadedSources[sn].bindings || [];
+                for (var i = 0; i < bs.length; i++) {
+                    try { map.setPaintProperty(bs[i].id, bs[i].prop, bs[i].make(p)); } catch (e) {}
+                }
+            }
+        }
+
+        /* ---------- 表达式助手 ---------- */
+
+        function landcoverExpr(p) {
+            return ["match", ["get", "E"],
+                1, p.forest,
+                4, p.farm,
+                7, p.park,
+                2, p.railcorridor,
+                "rgba(0,0,0,0)"];
+        }
+
+        // 低 zoom 呈浅灰细线、高 zoom 呈白色铺面
+        function lowHighExpr(p, lowKey, highKey, z0, z1) {
+            return ["interpolate", ["linear"], ["zoom"], z0, p[lowKey], z1, p[highKey]];
+        }
+
+        // K POI E 分类 → 图标名（图标精灵 src/sprites/coros 为统一蓝色圆形）
+        var POI_ICON_EXPR = ["match", ["get", "E"],
+            1, "convenience", 4, "golf", 5, "fast_food", 6, "park",
+            7, "bus_stop", 8, "train_station", 11, "campsite",
+            13, "supermarket", 19, "cafe", 22, "bar",
+            24, "dot", 25, "hospital", 26, "dot",
+            27, "attraction", 30, "stadium", 36, "fuel", 52, "parking",
+            "dot"];
+
+        /* ---------- VSM 各图层 ---------- */
+
+        function buildVSMLayers(sn, vl, p, ctx) {
+            var have = {};
+            for (var h = 0; h < vl.length; h++) have[vl[h].id] = true;
+
+            // F 地表覆盖
+            if (have.F) {
+                var idf = sn + "_landcover";
+                addTagged(ctx, { id: idf, source: sn, "source-layer": "F", type: "fill",
+                    filter: ["==", ["geometry-type"], "Polygon"],
+                    paint: { "fill-color": landcoverExpr(p) } }, "landcover");
+                bindPaint(ctx, idf, "fill-color", landcoverExpr);
+            }
+
+            // N 水体
+            if (have.N) {
+                var idn = sn + "_water";
+                addTagged(ctx, { id: idn, source: sn, "source-layer": "N", type: "fill",
+                    filter: ["==", ["geometry-type"], "Polygon"],
+                    paint: { "fill-color": p.water } }, "water");
+                bindPaint(ctx, idn, "fill-color", function (pp) { return pp.water; });
+            }
+
+            // I 保护区
+            if (have.I) {
+                var idi = sn + "_protected";
+                addTagged(ctx, { id: idi, source: sn, "source-layer": "I", type: "fill",
+                    filter: ["==", ["geometry-type"], "Polygon"],
+                    paint: { "fill-color": p.protected } }, "protected");
+                bindPaint(ctx, idi, "fill-color", function (pp) { return pp.protected; });
+            }
+
+            // B 机场用地
+            if (have.B) {
+                var idb = sn + "_airportfill";
+                addTagged(ctx, { id: idb, source: sn, "source-layer": "B", type: "fill",
+                    filter: ["==", ["geometry-type"], "Polygon"],
+                    paint: { "fill-color": p.airport } }, "airportfill");
+                bindPaint(ctx, idb, "fill-color", function (pp) { return pp.airport; });
+
+                var idbl = sn + "_airportline";
+                addTagged(ctx, { id: idbl, source: sn, "source-layer": "B", type: "line",
+                    filter: ["==", ["geometry-type"], "LineString"],
+                    paint: { "line-color": p.airportLine, "line-width": 1 } }, "airportline");
+                bindPaint(ctx, idbl, "line-color", function (pp) { return pp.airportLine; });
+            }
+
+            // L 道路
+            if (have.L) buildRoadLayers(sn, p, ctx);
+
+            // P / O 水系线
+            if (have.P) buildWaterLineLayer(sn, "P", p, ctx, 8, 0.5, 13, 1.2);
+            if (have.O) buildWaterLineLayer(sn, "O", p, ctx, 12, 0.8, 14, 1.4);
+
+            // K POI
+            if (have.K) buildPOILayers(sn, p, ctx);
+
+            // J 行政地名
+            if (have.J) buildPlaceLayers(sn, p, ctx);
+
+            // H 山峰
+            if (have.H) buildPeakLayers(sn, p, ctx);
+
+            // A 机场点
+            if (have.A) {
+                var ida = sn + "_airport";
+                addTagged(ctx, { id: ida, source: sn, "source-layer": "A", type: "symbol",
+                    filter: ["==", ["geometry-type"], "Point"],
+                    layout: { "icon-image": "aerodrome",
+                        "icon-size": ["interpolate", ["linear"], ["zoom"], 8, 0.6, 14, 0.9] } },
+                    "airport-icon");
+            }
+        }
+
+        function buildRoadLayers(sn, p, ctx) {
+            // 道路面 polygon（E4/5 等）
+            var ida = sn + "_roadarea";
+            addTagged(ctx, { id: ida, source: sn, "source-layer": "L", type: "fill",
+                filter: ["==", ["geometry-type"], "Polygon"],
+                paint: { "fill-color": p.roadArea } }, "roadarea");
+            bindPaint(ctx, ida, "fill-color", function (pp) { return pp.roadArea; });
+
+            function width(z0, v0, z1, v1) {
+                return ["interpolate", ["linear"], ["zoom"], z0, v0, z1, v1];
+            }
+            function color(key) {
+                return function (pp) { return pp[key]; };
+            }
+            function line(suffix, slot, classFilter, colorMake, widthExpr, dash) {
+                var id = sn + "_" + suffix;
+                var paint = { "line-color": colorMake(p), "line-width": widthExpr,
+                    "line-cap": "round", "line-join": "round" };
+                if (dash) paint["line-dasharray"] = dash;
+                addTagged(ctx, { id: id, source: sn, "source-layer": "L", type: "line",
+                    filter: ["all", ["==", ["geometry-type"], "LineString"], classFilter],
+                    paint: paint }, slot);
+                bindPaint(ctx, id, "line-color", colorMake);
+            }
+
+            // 自下而上：支路 → 次干 → 主干 → 高速（高等级道路在交叉处压过下级）
+            line("casing-local", "casing-local", ["in", "E", 11, 12, 13, 14, 23],
+                color("localCasing"), width(12, 0.6, 14, 3.2));
+            line("fill-local", "fill-local", ["in", "E", 11, 12, 13, 14, 23],
+                function (pp) { return lowHighExpr(pp, "localLow", "local", 12, 13.8); },
+                width(12, 0.4, 14, 2));
+            line("casing-secondary", "casing-secondary", ["==", "E", 10],
+                color("secondaryCasing"), width(11, 0.6, 14, 4.4));
+            line("fill-secondary", "fill-secondary", ["==", "E", 10],
+                function (pp) { return lowHighExpr(pp, "secondaryLow", "secondary", 11, 13.6); },
+                width(11, 0.4, 14, 3.2));
+            line("casing-arterial", "casing-arterial", ["in", "E", 8, 9],
+                color("arterialCasing"), width(10, 0.7, 14, 5.6));
+            line("fill-arterial", "fill-arterial", ["in", "E", 8, 9],
+                color("arterial"), width(10, 0.5, 14, 4.2));
+            line("casing-motorway", "casing-motorway", ["in", "E", 7, 20],
+                color("motorwayCasing"), width(10, 0.7, 14, 7.6));
+            line("fill-motorway", "fill-motorway", ["in", "E", 7, 20],
+                color("motorway"), width(10, 0.5, 14, 6));
+            line("path", "path", ["==", "E", 0],
+                color("path"), width(12, 0.5, 14, 1.3));
+            line("trail", "trail", ["==", "E", 29],
+                color("trail"), width(12, 0.7, 14, 1.8), [1.3, 0.9]);
+            line("rail", "rail", ["==", "E", 2],
+                color("rail"), width(10, 0.5, 14, 1.3), [2.4, 1.6]);
+            line("transit", "transit", ["==", "E", 3],
+                color("transit"), width(11, 0.6, 14, 1.6));
+
+            // 道路名（沿道路走向）
+            var idl = sn + "_roadlabel";
+            addTagged(ctx, { id: idl, source: sn, "source-layer": "L", type: "symbol",
+                filter: ["all", ["==", ["geometry-type"], "LineString"], ["has", "name"]],
+                minzoom: 11.5,
+                layout: { "symbol-placement": "line", "text-field": ["get", "name"],
+                    "text-font": ["Noto Sans Regular"],
+                    "text-size": ["match", ["get", "E"],
+                        7, 11, 20, 11, 8, 10.5, 9, 10.5, 10, 10, 9.5],
+                    "symbol-spacing": 280 },
+                paint: { "text-color": p.roadLabel, "text-halo-color": p.halo,
+                    "text-halo-width": 1.6 } }, "road-label");
+            bindPaint(ctx, idl, "text-color", function (pp) { return pp.roadLabel; });
+            bindPaint(ctx, idl, "text-halo-color", function (pp) { return pp.halo; });
+        }
+
+        function buildWaterLineLayer(sn, layer, p, ctx, z0, v0, z1, v1) {
+            var id = sn + "_" + layer + "_wline";
+            addTagged(ctx, { id: id, source: sn, "source-layer": layer, type: "line",
+                filter: ["==", ["geometry-type"], "LineString"],
+                paint: { "line-color": p.waterLine,
+                    "line-width": ["interpolate", ["linear"], ["zoom"], z0, v0, z1, v1] } },
+                "waterline");
+            bindPaint(ctx, id, "line-color", function (pp) { return pp.waterLine; });
+        }
+
+        function buildPOILayers(sn, p, ctx) {
+            var id = sn + "_poi";
+            addTagged(ctx, { id: id, source: sn, "source-layer": "K", type: "symbol",
+                filter: ["all", ["==", ["geometry-type"], "Point"], ["has", "E"]],
+                layout: { "icon-image": POI_ICON_EXPR,
+                    "icon-size": ["interpolate", ["linear"], ["zoom"], 12, 0.62, 14, 0.82],
+                    "icon-allow-overlap": false } }, "poi-icon");
+
+            var idl = sn + "_poilabel";
+            addTagged(ctx, { id: idl, source: sn, "source-layer": "K", type: "symbol",
+                filter: ["all", ["==", ["geometry-type"], "Point"], ["has", "name"]],
+                minzoom: 13,
+                layout: { "text-field": ["coalesce", ["get", "name"], ["get", "X"]],
+                    "text-font": ["Noto Sans Regular"],
+                    "text-size": ["interpolate", ["linear"], ["zoom"], 13, 9.5, 14, 11],
+                    "text-offset": [0, 1.4] },
+                paint: { "text-color": p.poiLabel, "text-halo-color": p.halo,
+                    "text-halo-width": 1.5 } }, "poi-label");
+            bindPaint(ctx, idl, "text-color", function (pp) { return pp.poiLabel; });
+            bindPaint(ctx, idl, "text-halo-color", function (pp) { return pp.halo; });
+        }
+
+        function buildPlaceLayers(sn, p, ctx) {
+            var id = sn + "_places";
+            addTagged(ctx, { id: id, source: sn, "source-layer": "J", type: "symbol",
+                filter: ["==", ["geometry-type"], "Point"],
+                layout: { "text-field": ["coalesce", ["get", "name"], ["get", "X"]],
+                    "text-font": ["Noto Sans Regular"],
+                    "text-size": ["match", ["get", "E"],
+                        5, 13.5,
+                        6, 11.5,
+                        10, 10.5, 11, 10.5, 16, 10.5,
+                        7, 9.5, 8, 9.5, 12, 9.5,
+                        10] },
+                paint: { "text-color": p.placeLabel, "text-halo-color": p.halo,
+                    "text-halo-width": 1.8 } }, "place-label");
+            bindPaint(ctx, id, "text-color", function (pp) { return pp.placeLabel; });
+            bindPaint(ctx, id, "text-halo-color", function (pp) { return pp.halo; });
+        }
+
+        function buildPeakLayers(sn, p, ctx) {
+            var id = sn + "_peakicon";
+            addTagged(ctx, { id: id, source: sn, "source-layer": "H", type: "symbol",
+                filter: ["==", ["geometry-type"], "Point"],
+                layout: { "icon-image": "peak",
+                    "icon-size": ["interpolate", ["linear"], ["zoom"], 11, 0.6, 14, 0.85] } },
+                "peak-icon");
+
+            var idl = sn + "_peaklabel";
+            addTagged(ctx, { id: idl, source: sn, "source-layer": "H", type: "symbol",
+                filter: ["==", ["geometry-type"], "Point"],
+                minzoom: 11.5,
+                layout: { "text-field": ["coalesce", ["get", "name"], ["to-string", ["get", "F"]]],
+                    "text-font": ["Noto Sans Regular"], "text-size": 10 },
+                paint: { "text-color": p.peakLabel, "text-halo-color": p.halo,
+                    "text-halo-width": 1.5 } }, "peak-label");
+            bindPaint(ctx, idl, "text-color", function (pp) { return pp.peakLabel; });
+            bindPaint(ctx, idl, "text-halo-color", function (pp) { return pp.halo; });
+        }
+
+        /* ---------- VCM 等高线 ---------- */
+
+        function buildVCMLayers(sn, vl, p, ctx) {
+            var have = {};
+            for (var h = 0; h < vl.length; h++) have[vl[h].id] = true;
+            if (!have.Q) return;
+
+            var id0 = sn + "_contour";
+            addTagged(ctx, { id: id0, source: sn, "source-layer": "Q", type: "line",
+                filter: ["!=", ["%", ["get", "F"], 50], 0],
+                paint: { "line-color": p.contourMinor,
+                    "line-width": ["interpolate", ["linear"], ["zoom"], 9, 0.4, 13, 0.8],
+                    "line-opacity": ["case", ["boolean", ["feature-state", "hover"], false], 1, 0.75] } },
+                "contour");
+            bindPaint(ctx, id0, "line-color", function (pp) { return pp.contourMinor; });
+
+            var id1 = sn + "_contour-index";
+            addTagged(ctx, { id: id1, source: sn, "source-layer": "Q", type: "line",
+                filter: ["==", ["%", ["get", "F"], 50], 0],
+                paint: { "line-color": p.contourIndex,
+                    "line-width": ["interpolate", ["linear"], ["zoom"], 9, 0.7, 13, 1.4],
+                    "line-opacity": ["case", ["boolean", ["feature-state", "hover"], false], 1, 0.9] } },
+                "contour");
+            bindPaint(ctx, id1, "line-color", function (pp) { return pp.contourIndex; });
+        }
+
+        /* ---------- Generic PMTiles 回退（保留随机配色诊断风格） ---------- */
+
+        function buildGenericLayers(sn, vl, p, ctx) {
+            for (var i = 0; i < vl.length; i++) {
+                (function (idx) {
+                    var lid = vl[idx].id;
+                    var c = colorForIndex(idx);
+                    var pfx = sn + "_" + lid;
+
+                    addTagged(ctx, { id: pfx + "_fill", source: sn, "source-layer": lid, type: "fill",
+                        filter: ["==", ["geometry-type"], "Polygon"],
+                        paint: { "fill-color": c, "fill-opacity": 0.25 } }, "landcover");
+
+                    addTagged(ctx, { id: pfx + "_line", source: sn, "source-layer": lid, type: "line",
+                        filter: ["==", ["geometry-type"], "LineString"],
+                        paint: { "line-color": c, "line-width": 1.5 } }, "waterline");
+
+                    addTagged(ctx, { id: pfx + "_outline", source: sn, "source-layer": lid, type: "line",
+                        filter: ["==", ["geometry-type"], "Polygon"],
+                        paint: { "line-color": c, "line-width": 0.5, "line-opacity": 0.5 } }, "waterline");
+
+                    addTagged(ctx, { id: pfx + "_circle", source: sn, "source-layer": lid, type: "circle",
+                        filter: ["==", ["geometry-type"], "Point"],
+                        paint: { "circle-color": c,
+                            "circle-radius": ["interpolate", ["linear"], ["zoom"], 8, 2, 14, 5],
+                            "circle-stroke-color": p.airportLine, "circle-stroke-width": 1 } }, "poi-icon");
+
+                    addTagged(ctx, { id: pfx + "_label", source: sn, "source-layer": lid, type: "symbol",
+                        filter: ["any", ["==", ["geometry-type"], "Point"], ["==", ["geometry-type"], "Polygon"]],
+                        layout: { "text-field": ["coalesce", ["get", "name"], ["get", "X"]],
+                            "text-font": ["Noto Sans Regular"],
+                            "text-size": ["interpolate", ["linear"], ["zoom"], 8, 7, 14, 12] },
+                        paint: { "text-color": p.roadLabel, "text-halo-color": p.halo,
+                            "text-halo-width": 1.5 } }, "place-label");
+                })(i);
+            }
+        }
+
+        /* ============================================================
            Load / Unload
         ============================================================ */
         function loadEntry(entry) {
@@ -888,9 +1285,9 @@
 
             var vl = (entry.meta && entry.meta.vector_layers) ? entry.meta.vector_layers : [];
             var isVCM = entry.type === "vcm";
-            var layerIds = [];
+            var ctx = { ids: [], bindings: [] };
 
-            // H2: promoteId 让 MVT 要素获得数字 id，feature-state hover 才能生效。
+            // H2: promoteId 让 MVT 要素获得数字 id，VCM feature-state hover 才能生效。
             // VCM 用高程字段 F；VSM/generic 各 source-layer 用数字字段 E（缺失则 id 为空，无副作用）。
             var promoteId = null;
             if (isVCM) {
@@ -907,64 +1304,24 @@
                 map.addSource(sn, { type: "vector", url: "pmtiles://" + key, promoteId: promoteId });
                 sourceAdded = true;
 
-            for (var i = 0; i < vl.length; i++) {
-                (function (idx) {
-                    var lid = vl[idx].id;
-                    var c = colorForIndex(idx);
-                    var pfx = sn + "_" + lid;
+                var pal = PALETTES[currentThemeName()];
+                if (isVCM) {
+                    buildVCMLayers(sn, vl, pal, ctx);
+                } else if (entry.type === "vsm") {
+                    buildVSMLayers(sn, vl, pal, ctx);
+                } else {
+                    buildGenericLayers(sn, vl, pal, ctx);
+                }
+                reorderLayers();
 
-                    if (isVCM) {
-                        // H2: VCM 线图层同样接 feature-state，hover 时加粗并提亮，与 VSM 行为一致。
-                        // 依赖上方 promoteId="F" 提供的要素 id；无 id 的要素不受影响。
-                        map.addLayer({ id: pfx + "_line", source: sn, "source-layer": lid, type: "line",
-                            paint: { "line-color": c,
-                                "line-width": ["case", ["boolean", ["feature-state", "hover"], false],
-                                    ["interpolate", ["linear"], ["zoom"], 9, 1.5, 14, 4],
-                                    ["interpolate", ["linear"], ["zoom"], 9, 0.5, 14, 2]],
-                                "line-opacity": ["case", ["boolean", ["feature-state", "hover"], false], 1, 0.85] } });
-                        layerIds.push(pfx + "_line");
-                    } else {
-                        map.addLayer({ id: pfx + "_fill", source: sn, "source-layer": lid, type: "fill",
-                            filter: ["==", ["geometry-type"], "Polygon"],
-                            paint: { "fill-color": c, "fill-opacity": ["case", ["boolean", ["feature-state", "hover"], false], 0.5, 0.2] } });
-                        layerIds.push(pfx + "_fill");
-
-                        map.addLayer({ id: pfx + "_line", source: sn, "source-layer": lid, type: "line",
-                            filter: ["==", ["geometry-type"], "LineString"],
-                            paint: { "line-color": c, "line-width": ["case", ["boolean", ["feature-state", "hover"], false], 3, 1.5] } });
-                        layerIds.push(pfx + "_line");
-
-                        map.addLayer({ id: pfx + "_outline", source: sn, "source-layer": lid, type: "line",
-                            filter: ["==", ["geometry-type"], "Polygon"],
-                            paint: { "line-color": c, "line-width": 0.5, "line-opacity": 0.5 } });
-                        layerIds.push(pfx + "_outline");
-
-                        var isLight = document.body.classList.contains("light-theme");
-                        map.addLayer({ id: pfx + "_circle", source: sn, "source-layer": lid, type: "circle",
-                            filter: ["==", ["geometry-type"], "Point"],
-                            paint: { "circle-color": c, "circle-radius": ["interpolate", ["linear"], ["zoom"], 8, 2, 14, 5],
-                                "circle-stroke-color": isLight ? "#555" : "#fff", "circle-stroke-width": 1 } });
-                        layerIds.push(pfx + "_circle");
-
-                        map.addLayer({ id: pfx + "_label", source: sn, "source-layer": lid, type: "symbol",
-                            filter: ["any", ["==", ["geometry-type"], "Point"], ["==", ["geometry-type"], "Polygon"]],
-                            layout: { "text-field": ["coalesce", ["get", "name"], ["get", "X"]],
-                                "text-font": ["Noto Sans Regular"],
-                                "text-size": ["interpolate", ["linear"], ["zoom"], 8, 7, 14, 12],
-                                "text-allow-overlap": false },
-                            paint: { "text-color": isLight ? "#222" : "#eee",
-                                "text-halo-color": isLight ? "#fff" : "#111",
-                                "text-halo-width": 1.5 } });
-                        layerIds.push(pfx + "_label");
-                    }
-                })(i);
-            }
-
-                loadedSources[sn] = { ids: layerIds, type: entry.type, key: key };
+                loadedSources[sn] = { ids: ctx.ids, bindings: ctx.bindings, type: entry.type, key: key };
             } catch (e) {
                 // H1: 加载中途失败，移除已建图层后再删 source（顺序不能反），并回收协议实例
-                for (var ci2 = 0; ci2 < layerIds.length; ci2++) {
-                    try { if (map.getLayer(layerIds[ci2])) map.removeLayer(layerIds[ci2]); } catch (ce) {}
+                for (var ci2 = 0; ci2 < ctx.ids.length; ci2++) {
+                    try { if (map.getLayer(ctx.ids[ci2])) map.removeLayer(ctx.ids[ci2]); } catch (ce) {
+                        delete layerSlotMap[ctx.ids[ci2]];
+                    }
+                    delete layerSlotMap[ctx.ids[ci2]];
                 }
                 if (sourceAdded) { try { if (map.getSource(sn)) map.removeSource(sn); } catch (ce2) {} }
                 try { protocol.remove(key); } catch (ce3) {}
@@ -978,6 +1335,7 @@
             if (entry) {
                 for (var i = 0; i < entry.ids.length; i++) {
                     try { if (map.getLayer(entry.ids[i])) map.removeLayer(entry.ids[i]); } catch (e) {}
+                    delete layerSlotMap[entry.ids[i]];
                 }
                 if (entry.key) { try { protocol.remove(entry.key); } catch (e) {} }
             }

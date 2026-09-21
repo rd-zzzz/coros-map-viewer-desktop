@@ -11,3 +11,7 @@ Desktop.ini
 
 # AI 助手工作区（记忆、本地状态，不入库）
 .workbuddy/
+
+# 本地地图数据（约 6 GB，不入库）
+/map/
+/Map/
