@@ -1490,7 +1490,7 @@
 
             var id1 = sn + "_contour-index";
             addTagged(ctx, { id: id1, source: sn, "source-layer": "Q", type: "line",
-                filter: ["==", ["%", ["get", "F"], 50], 0],
+                filter: ["all", ["has", "F"], ["==", ["%", ["get", "F"], 50], 0]],
                 paint: { "line-color": p.contourIndex,
                     "line-width": ["interpolate", ["linear"], ["zoom"], 9, 0.75, 13, 1.5],
                     "line-opacity": 0.9 } },
