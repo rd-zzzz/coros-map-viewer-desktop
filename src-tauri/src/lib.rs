@@ -50,6 +50,12 @@ fn read_file_slice(path: String, offset: u64, length: u64) -> Result<String, Str
     Ok(base64::engine::general_purpose::STANDARD.encode(&buf))
 }
 
+// P9: 报告是否为 debug 构建。release 包据此隐藏调试入口，dev 模式保持可见。
+#[tauri::command]
+fn is_debug_build() -> bool {
+    cfg!(debug_assertions)
+}
+
 fn scan_dir(dir: &PathBuf, out: &mut Vec<String>) -> Result<(), String> {
     let entries = fs::read_dir(dir).map_err(|e| format!("read_dir {:?}: {}", dir, e))?;
     for entry in entries {
@@ -79,7 +85,8 @@ pub fn run() {
         .plugin(tauri_plugin_window_state::Builder::default().build())
         .invoke_handler(tauri::generate_handler![
             read_path_as_files,
-            read_file_slice
+            read_file_slice,
+            is_debug_build
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

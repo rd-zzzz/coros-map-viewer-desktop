@@ -135,6 +135,8 @@
         #statusbar .sb-left, #statusbar .sb-center, #statusbar .sb-right { display: flex; align-items: center; gap: 6px; }
         #statusbar .sb-left { flex: 1; }
         #statusbar .sb-right { flex: 1; text-align: right; justify-content: flex-end; }
+        #sb-stats { font-size: 10px; color: var(--text-muted); white-space: nowrap; }
+        #sb-stats b { color: var(--text-secondary); font-weight: 600; }
         #statusbar .sb-label { color: var(--text-muted); margin-right: 2px; }
         #statusbar .sb-value { color: var(--text-secondary); }
         #statusbar .sb-dot {
@@ -235,18 +237,6 @@
             box-shadow: 0 1px 3px rgba(0,0,0,0.3);
         }
         .toggle-switch input:checked ~ .toggle-thumb { transform: translateX(18px); }
-
-        /* Stats Row */
-        .stats-row {
-            display: flex; gap: 8px; margin-top: 12px;
-        }
-        .stat-card {
-            flex: 1; padding: 8px 10px;
-            background: var(--bg-surface); border-radius: var(--radius-sm);
-            text-align: center;
-        }
-        .stat-card .stat-val { font-size: 16px; font-weight: 700; color: var(--accent); }
-        .stat-card .stat-label { font-size: 9px; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.5px; margin-top: 2px; }
 
         /* Status & Progress */
         #main-status { font-size: 11px; margin-top: 8px; line-height: 1.5; }
@@ -518,6 +508,14 @@
         #empty-state svg { width: 46px; height: 46px; opacity: 0.35; margin-bottom: 10px; }
         #empty-state .es-title { font-size: 14px; color: var(--text-secondary); opacity: 0.7; }
         #empty-state .es-sub { font-size: 10px; margin-top: 6px; opacity: 0.8; }
+        .es-primary {
+            pointer-events: auto; margin-top: 18px; padding: 9px 28px;
+            background: var(--accent); color: #fff; border: none;
+            border-radius: var(--radius-sm); font-size: 12px; font-weight: 600;
+            cursor: pointer; box-shadow: 0 4px 14px rgba(59,130,246,0.35);
+            transition: transform var(--transition), filter var(--transition);
+        }
+        .es-primary:hover { filter: brightness(1.08); transform: translateY(-1px); }
         #empty-state.hidden { display: none; }
 
         #drag-overlay {
@@ -556,13 +554,12 @@
             border-bottom: 1px solid var(--border);
         }
         .fl-row:hover { background: var(--bg-surface-hover); }
-        .fl-badge {
-            font-size: 9px; font-weight: 600; padding: 2px 6px; border-radius: 3px;
-            min-width: 38px; text-align: center; flex-shrink: 0;
+        .fl-group {
+            position: sticky; top: 0; z-index: 1;
+            font-size: 10px; font-weight: 600; color: var(--text-secondary);
+            padding: 7px 14px 5px; background: var(--bg-panel-solid);
+            border-bottom: 1px solid var(--border);
         }
-        .fl-badge.vcm { background: var(--accent-dim); color: var(--accent); }
-        .fl-badge.vsm { background: var(--success-dim); color: var(--success); }
-        .fl-badge.pmt { background: var(--warn-dim); color: var(--warn); }
         .fl-name { flex: 1; color: var(--text-secondary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
         .fl-z { font-size: 9px; color: var(--text-muted); font-family: Consolas, monospace; flex-shrink: 0; }
     </style>
@@ -590,9 +587,9 @@
         <div class="panel-header" id="controls-toggle">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
             设置
-            <svg class="collapse-icon" viewBox="0 0 12 12" width="12" height="12"><polyline points="2,4 6,8 10,4" fill="none" stroke="currentColor" stroke-width="1.5"/></svg>
+            <svg class="collapse-icon collapsed" viewBox="0 0 12 12" width="12" height="12"><polyline points="2,4 6,8 10,4" fill="none" stroke="currentColor" stroke-width="1.5"/></svg>
         </div>
-        <div class="panel-body" id="controls-body">
+        <div class="panel-body collapsed" id="controls-body">
             <div class="section-label">数据</div>
             <div class="file-drop" id="file-drop">
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
@@ -630,17 +627,6 @@
                     <span class="toggle-track"></span>
                     <span class="toggle-thumb"></span>
                 </label>
-            </div>
-
-            <div class="stats-row">
-                <div class="stat-card">
-                    <div class="stat-val" id="stat-indexed">0</div>
-                    <div class="stat-label">已索引</div>
-                </div>
-                <div class="stat-card">
-                    <div class="stat-val" id="stat-active">0</div>
-                    <div class="stat-label">已加载</div>
-                </div>
             </div>
 
             <div class="meta-toggle" id="meta-toggle">
@@ -682,6 +668,7 @@
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.3"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>
         <div class="es-title">拖入地图文件夹开始浏览</div>
         <div class="es-sub">支持 VCM / VSM 的 .t 文件及 .pmtiles</div>
+        <button id="es-pick" class="es-primary">选择地图文件夹</button>
     </div>
 
     <!-- Native Drag Overlay -->
@@ -740,6 +727,10 @@
             <span class="sb-value" id="sb-coords">—</span>
         </div>
 
+        <div class="sb-center">
+            <span id="sb-stats"></span>
+        </div>
+
         <div class="sb-right">
             <span class="sb-dot" id="sb-dot"></span>
             <span class="sb-value" id="sb-status">Ready</span>
@@ -759,6 +750,11 @@
             controlsBody.classList.toggle("collapsed");
             collapseIcon.classList.toggle("collapsed");
         };
+        // 首屏设置面板默认收起；用户显式动作（选文件夹 / 拖入 / 居中按钮）时展开
+        function expandControls() {
+            controlsBody.classList.remove("collapsed");
+            collapseIcon.classList.remove("collapsed");
+        }
 
         /* ============================================================
            Help / About Footer Collapse
@@ -822,6 +818,11 @@
         document.getElementById("btn-clear-log").onclick = function () {
             debugContent.innerHTML = "";
         };
+
+        // release 构建（非 debug）隐藏调试入口；dev 模式保持可见
+        window.__TAURI__.core.invoke("is_debug_build").then(function (isDbg) {
+            if (!isDbg) debugToggle.style.display = "none";
+        }).catch(function () {});
 
         // O7: 原来每写一行就把 80 行拼成字符串整体重设 innerHTML，并读一次 scrollHeight
         // 强制同步布局。瓦片/字形加载失败时 error 事件是高频的，会变成持续的 DOM 重建。
@@ -1791,6 +1792,7 @@
         ============================================================ */
         async function indexFolder(files) {
             if (loadingActive) return;
+            expandControls();
             var statusEl = document.getElementById("main-status");
             var progress = document.getElementById("progress-bar");
             var progressFill = document.getElementById("progress-fill");
@@ -1946,8 +1948,8 @@
         ============================================================ */
         function updateStats() {
             var n = 0; for (var k in loadedSources) n++;
-            document.getElementById("stat-indexed").textContent = allEntries.length;
-            document.getElementById("stat-active").textContent = n;
+            document.getElementById("sb-stats").innerHTML =
+                "已索引 <b>" + allEntries.length + "</b> · 已加载 <b>" + n + "</b>";
         }
 
         /* ============================================================
@@ -2036,6 +2038,10 @@
 
         /* Folder Input */
         var folderInput = document.getElementById("folder-input");
+        document.getElementById("es-pick").onclick = function () {
+            expandControls();
+            folderInput.click();
+        };
         folderInput.addEventListener("change", function (e) {
             if (e.target.files.length) {
                 var snapshot = Array.from(e.target.files);
@@ -2051,6 +2057,7 @@
         if (tauriAvailable) {
             var listen = window.__TAURI__.event.listen;
             listen("tauri://drag-enter", function () {
+                expandControls();
                 fileDrop.classList.add("drag-over");
                 document.getElementById("drag-overlay").classList.add("show");
             });
@@ -2112,6 +2119,7 @@
                 dbg("扫描进行中，忽略本次拖入", "dbg-warn");
                 return;
             }
+            expandControls();
             var statusEl = document.getElementById("main-status");
             var progress = document.getElementById("progress-bar");
             var progressFill = document.getElementById("progress-fill");
@@ -2269,24 +2277,47 @@
         var flSummary = document.getElementById("fl-summary");
         var btnFileList = document.getElementById("btn-file-list");
 
-        function typeBadge(t) {
-            if (t === "vcm") return '<span class="fl-badge vcm">VCM</span>';
-            if (t === "vsm") return '<span class="fl-badge vsm">VSM</span>';
-            return '<span class="fl-badge pmt">PMT</span>';
-        }
+
         function renderFileList() {
             var vc = 0, vs = 0, ot = 0;
-            var rows = "";
+            var groups = { vcm: [], vsm: [], generic: [] };
             for (var fi = 0; fi < allEntries.length; fi++) {
                 var e = allEntries[fi];
                 if (e.type === "vcm") vc++; else if (e.type === "vsm") vs++; else ot++;
-                var nm = e.diskPath ? e.diskPath.replace(/^.*[\\\/]/, "") : (e.file ? e.file.name : "?");
-                var zr = "z" + e.header.minZoom + "-" + e.header.maxZoom;
-                rows += '<div class="fl-row" data-i="' + fi + '">' + typeBadge(e.type) +
-                    '<span class="fl-name">' + escapeHtml(nm) + '</span>' +
-                    '<span class="fl-z">' + zr + '</span></div>';
+                var gk = e.type === "vcm" ? "vcm" : (e.type === "vsm" ? "vsm" : "generic");
+                groups[gk].push(fi);
             }
-            filelistBody.innerHTML = rows;
+            var defs = [
+                { key: "vcm", title: "VCM 等高线", count: vc },
+                { key: "vsm", title: "VSM 矢量", count: vs },
+                { key: "generic", title: "其他 / PMT", count: ot }
+            ];
+            var html = "";
+            for (var gi = 0; gi < defs.length; gi++) {
+                var d = defs[gi];
+                if (!d.count) continue;
+                // 按组统计 z 范围：组内全相同则并入组标题、省略每行 z 列；
+                // 组内存在多种范围才逐行标注
+                var zSet = {};
+                for (var zi = 0; zi < groups[d.key].length; zi++) {
+                    var ze = allEntries[groups[d.key][zi]];
+                    zSet["z" + ze.header.minZoom + "-" + ze.header.maxZoom] = 1;
+                }
+                var zKeys = Object.keys(zSet);
+                var groupHead = d.title + " · " + d.count;
+                if (zKeys.length === 1) groupHead += " · " + zKeys[0];
+                html += '<div class="fl-group">' + groupHead + '</div>';
+                for (var ri = 0; ri < groups[d.key].length; ri++) {
+                    var idx = groups[d.key][ri];
+                    var en = allEntries[idx];
+                    var nm = en.diskPath ? en.diskPath.replace(/^.*[\\\/]/, "") : (en.file ? en.file.name : "?");
+                    html += '<div class="fl-row" data-i="' + idx + '">' +
+                        '<span class="fl-name">' + escapeHtml(nm) + '</span>';
+                    if (zKeys.length > 1) html += '<span class="fl-z">z' + en.header.minZoom + "-" + en.header.maxZoom + '</span>';
+                    html += '</div>';
+                }
+            }
+            filelistBody.innerHTML = html;
             flSummary.textContent = "VCM " + vc + " / VSM " + vs + (ot ? " / Other " + ot : "");
             btnFileList.textContent = "文件列表（" + allEntries.length + "）";
             btnFileList.style.display = allEntries.length ? "block" : "none";
@@ -2315,6 +2346,7 @@
         document.getElementById("btn-clear-all").onclick = function () {
             for (var s in loadedSources) unloadSource(s);
             allEntries = [];
+            renderFileList();
             accumulatedNames = {};
             resetViewportRetry();
             // 清理项: 原来不收尾这些状态，清除后面板可能残留已删除源的属性、
@@ -2333,11 +2365,13 @@
             try { map.getCanvas().style.cursor = ""; } catch (e) {}
             document.getElementById("file-drop").classList.remove("has-file");
             document.getElementById("file-drop").querySelector(".drop-text").textContent = "点击选择文件夹";
-            document.getElementById("file-drop").querySelector(".drop-hint").textContent = "支持 VCM / VSM 子目录及 .pmtiles 文件";
+            document.getElementById("file-drop").querySelector(".drop-hint").textContent = "或将文件夹拖入窗口任意位置";
             document.getElementById("main-status").innerHTML = "";
             document.getElementById("btn-clear-all").style.display = "none";
-            document.getElementById("stat-indexed").textContent = "0";
-            document.getElementById("stat-active").textContent = "0";
+            document.getElementById("sb-stats").innerHTML = "";
+            // 回到首屏：设置面板重新收起
+            controlsBody.classList.add("collapsed");
+            collapseIcon.classList.add("collapsed");
             updateViewport();
             dbg("All files cleared", "dbg-info");
         };
