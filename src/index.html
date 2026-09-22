@@ -747,26 +747,33 @@
         var debugToggle = document.getElementById("debug-toggle");
         var debugPanel = document.getElementById("debug-panel");
         var debugVisible = false;
-        var debugLines = [];
 
         debugToggle.onclick = function () {
             debugVisible = !debugVisible;
             debugPanel.style.display = debugVisible ? "block" : "none";
             debugToggle.classList.toggle("active", debugVisible);
+            if (debugVisible) debugContent.scrollTop = debugContent.scrollHeight;
         };
 
         document.getElementById("btn-clear-log").onclick = function () {
-            debugLines = [];
             debugContent.innerHTML = "";
         };
 
+        // O7: 原来每写一行就把 80 行拼成字符串整体重设 innerHTML，并读一次 scrollHeight
+        // 强制同步布局。瓦片/字形加载失败时 error 事件是高频的，会变成持续的 DOM 重建。
+        // 改为追加单个节点 + 超限时移除首节点；面板不可见时不触发滚动读取。
         function dbg(msg, cls) {
             var ts = new Date().toLocaleTimeString();
             var errLine = cls === "dbg-err" ? " dbg-err-line" : (cls === "dbg-warn" ? " dbg-warn-line" : "");
-            debugLines.push('<div class="dbg-line' + errLine + '"><span class="dbg-ts">[' + ts + "]</span><span class=\"" + (cls || "dbg-info") + "\">" + escapeHtml(msg) + "</span></div>");
-            if (debugLines.length > 80) debugLines.shift();
-            debugContent.innerHTML = debugLines.join("");
-            debugContent.scrollTop = debugContent.scrollHeight;
+            var div = document.createElement("div");
+            div.className = "dbg-line" + errLine;
+            div.innerHTML = '<span class="dbg-ts">[' + ts + ']</span><span class="' +
+                (cls || "dbg-info") + '">' + escapeHtml(msg) + "</span>";
+            debugContent.appendChild(div);
+            if (debugContent.firstChild && debugContent.childNodes.length > 80) {
+                debugContent.removeChild(debugContent.firstChild);
+            }
+            if (debugVisible) debugContent.scrollTop = debugContent.scrollHeight;
         }
 
         dbg("pmtiles: " + (typeof pmtiles === "object" ? "OK" : "MISSING"), typeof pmtiles === "object" ? "dbg-ok" : "dbg-err");
@@ -782,8 +789,14 @@
         var loadingActive = false;
         var indexCancelRequested = false;
         var indexErrors = [];
-        var accumulatedFiles = [];
+        // 清理项: 原 accumulatedFiles 只在文件夹通道累加，拖拽通道不累加，
+        // 两通道混用时「已选文件数」会小于实际条目数。计数统一取 allEntries.length，
+        // 该数组随之删除。
         var accumulatedNames = {};
+        // P1-6: sourceName 必须全局唯一。原写法 type + "_" + 文件名，同名不同目录的
+        // 两个文件（例如两个版本的地图包共存）会撞名：后一个被 updateViewport 的
+        // loadedSources 守卫静默跳过。这里给每条索引记录加递增序号。
+        var entrySeq = 0;
         // P1-3: 缓存的「可 hover 图层」id 列表与当前光标状态，供合并后的 mousemove 使用
         var hoverableLayers = [];
         var lastCursor = "";
@@ -915,11 +928,13 @@
         document.getElementById("zoom-in").onclick = function () { map.zoomIn(); };
         document.getElementById("zoom-out").onclick = function () { map.zoomOut(); };
 
-        map.on("zoom", function () {
-            var z = map.getZoom();
-            zoomValueEl.textContent = "Z " + z.toFixed(2);
-            updateScaleBar();
-        });
+        // 清理项: 原 zoom 与 move 两个监听都调 updateScaleBar，而 zoom 必伴随 move，
+        // 等于每帧算两遍并写两遍 DOM。比例尺只跟 move；初始一次放在 load 里
+        // （HTML 里的静态占位是 Z 8.00，与实际初始 zoom 9.5 不符，load 时校正）。
+        function updateZoomLabel() {
+            zoomValueEl.textContent = "Z " + map.getZoom().toFixed(2);
+        }
+        map.on("zoom", updateZoomLabel);
         map.on("move", function () { updateScaleBar(); });
 
         function updateScaleBar() {
@@ -932,12 +947,16 @@
         }
         function formatDistance(m) {
             if (m >= 1000) return (m / 1000).toFixed(1) + " km";
-            if (m >= 100) return Math.round(m) + " m";
+            // 清理项: 原 m>=100 与 m>=10 两个分支返回完全相同的值
             if (m >= 10) return Math.round(m) + " m";
             return m.toFixed(1) + " m";
         }
 
-        map.on("load", function () { dbg("Map ready", "dbg-ok"); });
+        map.on("load", function () {
+            dbg("Map ready", "dbg-ok");
+            updateZoomLabel();
+            updateScaleBar();
+        });
         map.on("error", function (e) {
             var msg = e.error ? (e.error.message || String(e.error)) : JSON.stringify(e);
             dbg("ERR: " + msg, "dbg-err");
@@ -1057,6 +1076,19 @@
                 // P1-1: Rust 端返回 base64 文本（见 lib.rs 注释的原因），此处还原成 ArrayBuffer
                 return { data: base64ToArrayBuffer(b64) };
             });
+        };
+
+        // P1-6: pmtiles.FileSource.getKey() 只返回文件名（已核实 src/pmtiles.js），
+        // 不含目录；DiskSource.getKey() 返回完整路径。两条通道的 key 口径本就不同，
+        // 同名不同目录的文件经 FileSource 时会撞同一个 key，protocol.add() 后者覆盖
+        // 前者。统一包一层，把协议 key 换成全局唯一的 sourceName。
+        function KeyedSource(inner, key) {
+            this._inner = inner;
+            this._key = key;
+        }
+        KeyedSource.prototype.getKey = function () { return this._key; };
+        KeyedSource.prototype.getBytes = function (offset, length) {
+            return this._inner.getBytes(offset, length);
         };
 
         // P1-1: base64 → ArrayBuffer。保持 ES5 写法（无 Buffer / TextDecoder 依赖）
@@ -1444,9 +1476,12 @@
             // 以 (sourceLayer, id) 为键且跨瓦片生效——hover 一条等高线会点亮整个 source
             // 内所有同高程线。高程天然不唯一，无法充当要素 id，故 VCM 不提供 hover 高亮，
             // 仅保留点击属性面板（不依赖要素 id）。
+            // P2-1: 首曲线必须与下面的计曲线一样先判 ["has","F"]。缺 F 的要素会让
+            // ["%", null, 50] 求值失败，MapLibre 会按整层表达式错误处理——即整层
+            // 等高线消失，而不是只丢一个要素。
             var id0 = sn + "_contour";
             addTagged(ctx, { id: id0, source: sn, "source-layer": "Q", type: "line",
-                filter: ["!=", ["%", ["get", "F"], 50], 0],
+                filter: ["all", ["has", "F"], ["!=", ["%", ["get", "F"], 50], 0]],
                 paint: { "line-color": p.contourMinor,
                     "line-width": ["interpolate", ["linear"], ["zoom"], 9, 0.45, 13, 0.85],
                     "line-opacity": 0.75 } },
@@ -1527,10 +1562,11 @@
         ============================================================ */
         function loadEntry(entry) {
             var sn = entry.sourceName;
-            var source = entry.diskPath ? new DiskSource(entry.diskPath) : new pmtiles.FileSource(entry.file);
-            var inst = new pmtiles.PMTiles(source);
+            var raw = entry.diskPath ? new DiskSource(entry.diskPath) : new pmtiles.FileSource(entry.file);
+            // P1-6: 协议 key 直接用 sn（全局唯一），不再依赖底层 Source 的 getKey()
+            var key = sn;
+            var inst = new pmtiles.PMTiles(new KeyedSource(raw, key));
             protocol.add(inst);
-            var key = inst.source.getKey();
 
             var vl = (entry.meta && entry.meta.vector_layers) ? entry.meta.vector_layers : [];
             var isVCM = entry.type === "vcm";
@@ -1603,6 +1639,14 @@
         // 鼠标移动会持续触发）把 10 次预算在一次样式切换内烧光，导致视口刷新永久丢失。
         var vpRetries = 0;
         var vpRetryTimer = null;
+        // P2-2: 预算烧光后必须能复位。vpRetries 原来只在 style 就绪时才清零，而
+        // 那之后是否还有 moveend/zoomend 完全取决于用户——10 次预算（2 秒）用完后
+        // 视口刷新会一直丢失到用户下一次操作为止。索引与清除都是新一轮生命周期，
+        // 入口处复位。
+        function resetViewportRetry() {
+            if (vpRetryTimer !== null) { clearTimeout(vpRetryTimer); vpRetryTimer = null; }
+            vpRetries = 0;
+        }
         function updateViewport() {
             if (!allEntries.length) return;
             if (!map.isStyleLoaded()) {
@@ -1616,7 +1660,6 @@
                 return;
             }
             vpRetries = 0;
-            if (vpRetryTimer !== null) { clearTimeout(vpRetryTimer); vpRetryTimer = null; }
 
             var z = map.getZoom();
             var b = map.getBounds();
@@ -1664,7 +1707,9 @@
 
             if (loaded > 0 || toRemove.length > 0) {
                 // P1-2: 整批只重排一次（原在 loadEntry 内，每层触发一次全量 moveLayer）
-                reorderLayers();
+                // O8: 纯卸载不改变剩余图层的相对顺序，只有新增源才需要重排——
+                // 每次移出视口都全量重排是白花的 648 次 moveLayer。
+                if (loaded > 0) reorderLayers();
                 // P1-3: 源有增删，重建可 hover 图层缓存
                 refreshHoverableLayers();
                 dbg("Z" + z.toFixed(1) + " | +" + loaded + " -" + toRemove.length + " | " + Object.keys(loadedSources).length + " active", "dbg-info");
@@ -1686,9 +1731,10 @@
             var btnClearAll = document.getElementById("btn-clear-all");
 
             var newCount = 0, skipCount = 0, errCount = 0;
-            var totalNew = 0;
+            var totalNew = 0, totalFiles = 0;
             indexCancelRequested = false;
             indexErrors.length = 0;
+            resetViewportRetry();
             document.getElementById("btn-cancel-index").textContent = "取消索引";
             for (var fi = 0; fi < files.length; fi++) {
                 var fn = files[fi].name.toLowerCase();
@@ -1696,19 +1742,29 @@
                 // 的完整路径互相识别）；M1+O2: 与主循环口径一致，detectType 无法识别不计入，
                 // 避免进度卡在 <100%
                 var fkey = normalizePathKey(files[fi].webkitRelativePath || files[fi].name);
-                if ((fn.endsWith(".t") || fn.endsWith(".pmtiles")) && !isKnownPath(fkey) && detectType(files[fi])) totalNew++;
+                if (fn.endsWith(".t") || fn.endsWith(".pmtiles")) {
+                    totalFiles++;
+                    if (!isKnownPath(fkey) && detectType(files[fi])) totalNew++;
+                }
             }
 
             if (!totalNew) {
-                statusEl.innerHTML = '<span class="dim">全部重复，无新文件</span>';
-                dbg("All " + files.length + " files duplicated", "dbg-warn");
-                btnClearAll.style.display = accumulatedFiles.length ? "block" : "none";
+                // P2-3: 原来「一个可索引文件都没有」与「全是已索引过的重复文件」
+                // 共用一句「全部重复」，前者其实是选错目录，文案会误导。
+                if (totalFiles === 0) {
+                    statusEl.innerHTML = '<span class="dim">未找到 .t / .pmtiles 文件</span>';
+                    dbg("No indexable file in " + files.length + " selected files", "dbg-warn");
+                } else {
+                    statusEl.innerHTML = '<span class="dim">全部重复，无新文件</span>';
+                    dbg("All " + totalFiles + " files duplicated", "dbg-warn");
+                }
+                btnClearAll.style.display = allEntries.length ? "block" : "none";
                 return;
             }
 
             var wasEmpty = allEntries.length === 0;
 
-            dbg("Scanning " + totalNew + " new files (" + (accumulatedFiles.length) + " existing)...");
+            dbg("Scanning " + totalNew + " new files (" + allEntries.length + " existing)...");
             fileDrop.classList.add("has-file");
             btnClearAll.style.display = "block";
 
@@ -1735,9 +1791,9 @@
                     var inst = new pmtiles.PMTiles(new pmtiles.FileSource(file));
                     var header = await inst.getHeader();
                     var meta = await inst.getMetadata();
-                    var sn = type + "_" + file.name.replace(/\.(t|pmtiles)$/i, "");
+                    // P1-6: 序号保证同名不同目录的文件不会撞 sourceName
+                    var sn = type + "_" + (++entrySeq) + "_" + file.name.replace(/\.(t|pmtiles)$/i, "");
 
-                    accumulatedFiles.push(file);
                     accumulatedNames[fileKey] = true;
 
                     allEntries.push({
@@ -1770,7 +1826,9 @@
             progress.style.display = "none";
             document.getElementById("btn-cancel-index").style.display = "none";
             fileDrop.querySelector(".drop-text").textContent = "已选择文件夹";
-            fileDrop.querySelector(".drop-hint").textContent = accumulatedFiles.length + " 个文件（共 " + allEntries.length + " 条）";
+            // P1-7: 计数统一取 allEntries.length（原用只在文件夹通道累加的
+            // accumulatedFiles，两通道混用时会显示比实际少的数字）
+            fileDrop.querySelector(".drop-hint").textContent = allEntries.length + " 个文件";
             if (canceledFolder) {
                 statusEl.innerHTML = '<span class="dim">已取消（已完成 ' + newCount + "）</span>";
             } else {
@@ -1872,10 +1930,12 @@
             // O4: 优先展示线/点/标注要素，避免半透明 fill 在点击时盖住更具体的要素
             var f = features[0];
             for (var fi2 = 0; fi2 < features.length; fi2++) {
-                var lid2 = (features[fi2].layer && features[fi2].layer.id) ? features[fi2].layer.id : "";
-                // 清理项: 原写法 indexOf("_fill") !== length - 5 语义绕且依赖长度，
-                // 直接取尾部 5 字符比较更直白、无边界歧义
-                if (lid2.slice(-5) !== "_fill") { f = features[fi2]; break; }
+                // P1-9: 原按图层 id 是否以 "_fill" 结尾判断，但只有 generic 通道的图层
+                // 叫 xxx_fill——VSM 的面层是 _landcover / _water / _protected /
+                // _airportfill / _roadarea，全部不含该后缀。结果是点击公园、水面时
+                // 恰恰优先选中覆盖面要素，与注释意图完全相反。直接看图层类型。
+                var lt = features[fi2].layer ? features[fi2].layer.type : "";
+                if (lt !== "fill") { f = features[fi2]; break; }
             }
             var rows = '<tr><td>source</td><td>' + escapeHtml(f.source) + "</td></tr>" +
                 '<tr><td>layer</td><td>' + escapeHtml(f.sourceLayer || "-") + "</td></tr>" +
@@ -1946,16 +2006,31 @@
             var allFilePaths = [];
             var pending = paths.length;
 
+            // P1-8: 原来在两个回调里各自写 `if (--pending === 0 && allFilePaths.length)`，
+            // 一旦拖入的目录里没有 .t/.pmtiles（或 RPC 全部失败），既不会调索引也不会
+            // 有任何提示——用户只看到遮罩消失、什么都没发生。收口成一个 done()，
+            // 无论成功失败都递减，且空结果时给出可见反馈。
+            function done() {
+                if (--pending > 0) return;
+                if (!allFilePaths.length) {
+                    document.getElementById("main-status").innerHTML =
+                        '<span class="dim">未找到 .t / .pmtiles 文件</span>';
+                    dbg("Drag-drop: no indexable file found", "dbg-warn");
+                    return;
+                }
+                indexDroppedPaths(allFilePaths);
+            }
+
             for (var i = 0; i < paths.length; i++) {
                 (function(p) {
                     window.__TAURI__.core.invoke("read_path_as_files", { path: p }).then(function (filePathList) {
                         for (var j = 0; j < filePathList.length; j++) {
                             allFilePaths.push(filePathList[j]);
                         }
-                        if (--pending === 0 && allFilePaths.length) indexDroppedPaths(allFilePaths);
+                        done();
                     }).catch(function (err) {
                         dbg("Scan fail: " + p + ": " + err, "dbg-err");
-                        if (--pending === 0 && allFilePaths.length) indexDroppedPaths(allFilePaths);
+                        done();
                     });
                 })(paths[i]);
             }
@@ -1978,6 +2053,7 @@
 
             // H3: 记录入口是否为空，仅首次加载才调整视图，避免追加文件时重置用户视野
             var wasEmpty = allEntries.length === 0;
+            resetViewportRetry();
 
             // P1-5: 与文件夹通道共用归一化 key 与后缀判定（见 normalizePathKey 注释），
             // 使「先选文件夹、再拖入同一文件夹」不会把同一文件索引两次。
@@ -2025,7 +2101,8 @@
                     var inst = new pmtiles.PMTiles(diskSource);
                     var header = await inst.getHeader();
                     var meta = await inst.getMetadata();
-                    var sn = type + "_" + fileName.replace(/\.(t|pmtiles)$/i, "");
+                    // P1-6: 与文件夹通道一致，序号保证 sourceName 全局唯一
+                    var sn = type + "_" + (++entrySeq) + "_" + fileName.replace(/\.(t|pmtiles)$/i, "");
 
                     accumulatedNames[normalizePathKey(fullPath)] = true;
 
@@ -2170,8 +2247,8 @@
         document.getElementById("btn-clear-all").onclick = function () {
             for (var s in loadedSources) unloadSource(s);
             allEntries = [];
-            accumulatedFiles = [];
             accumulatedNames = {};
+            resetViewportRetry();
             // 清理项: 原来不收尾这些状态，清除后面板可能残留已删除源的属性、
             // hoverableLayers 仍指向已移除的图层、光标停留在 pointer
             titleText.textContent = "";

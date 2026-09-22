@@ -16,6 +16,11 @@ fn read_path_as_files(path: String) -> Result<Vec<String>, String> {
         }
     } else if p.is_dir() {
         scan_dir(&p, &mut result)?;
+    } else {
+        // P1-8: 路径不存在 / 无权限 / 既非文件也非目录时，原来静默返回空数组，
+        // 前端据此判定「没有可索引文件」，用户看到的只是「拖入后毫无反应」。
+        // 显式报错，让前端能把原因写进调试日志。
+        return Err(format!("无法访问（不存在，或不是文件/目录）: {}", path));
     }
 
     Ok(result)

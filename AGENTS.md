@@ -75,7 +75,7 @@ PMTiles JS 的 Source 只需实现 `getKey()` 与 `getBytes(offset, length)`。�
 
 ### 2. Rust IPC 命令（`src-tauri/src/lib.rs`）
 
-- `read_path_as_files(path)`：文件则校验后缀直接返回；文件夹则递归扫描，返回所有 `.t` / `.pmtiles` 的完整路径。
+- `read_path_as_files(path)`：文件则校验后缀直接返回；文件夹则递归扫描，返回所有 `.t` / `.pmtiles` 的完整路径；**路径不存在 / 无权限 / 既非文件也非目录时返回 `Err`**（勿改回空数组——前端会据此判定"拖入成功但什么都没有"，用户只看到遮罩消失、无任何反馈）。
 - `read_file_slice(path, offset, length)`：读取指定字节范围（自动 clamp 到文件长度），是 PMTiles Range 请求的实际执行者。**返回 base64 字符串而不是 `Vec<u8>`**——`Vec<u8>` 会被 serde 序列化成 JSON 数字数组，实测 40 KB 二进制膨胀到 3.56x、序列化+解析约 1.4 ms/瓦片；base64 只有 1.33x、约 0.075 ms（端到端往返已实测校验一致）。前端 `DiskSource` 用 `base64ToArrayBuffer()`（基于 `atob`）还原成 `ArrayBuffer`。
 - **溢出防护（勿改回）**：`end` 用 `offset.saturating_add(length).min(file_len)`。`offset + length` 在 u64 下可能溢出，release 构建无溢出检查，回绕会让 `min()` 取到巨大值并触发 `vec![0u8; 巨大]` 的内存分配。
 
@@ -87,6 +87,7 @@ PMTiles JS 的 Source 只需实现 `getKey()` 与 `getBytes(offset, length)`。�
 
 - **索引阶段**：遍历文件，仅读取 Header 与 Metadata 存入 `allEntries[]`，不加入地图。
 - **增量与去重**：`accumulatedNames` 是两条通道共用的去重表，但两条通道**天生拿不到同口径的标识**——文件夹通道只有 `webkitRelativePath`（浏览器 File API 不暴露绝对路径），原生拖拽通道是完整磁盘路径。因此统一走 `normalizePathKey()`（分隔符归一为 `/`、Windows 下转小写）+ `isKnownPath()`（归一化后互为路径后缀即视为同一文件）。不要改回直接字符串相等比较，否则「先选文件夹再拖入同一文件夹」会把同一文件索引两次。索引开始前先预扫一遍统计 `totalNew`（后缀合法 + `isKnownPath` 为假 + `detectType` 能识别，三者同时满足才计数），否则进度条永远走不到 100%。
+- **sourceName 必须全局唯一（勿改回）**：`sn` 由 `type + "_" + (++entrySeq) + "_" + 文件名` 组成。原来只有 `type + "_" + 文件名`，同名不同目录的两个文件（例如两个版本的地图包共存）会撞名，后一个被 `updateViewport()` 的 `loadedSources` 守卫静默跳过。同理 `loadEntry()` 用 `KeyedSource` 把协议 key 换成 `sn`——`pmtiles.FileSource.getKey()` 只返回文件名（已核实 `src/pmtiles.js`），与 `DiskSource`（返回完整路径）口径不同，同名文件在 protocol 里会互相覆盖。
 - **重入守卫（两条通道都要有）**：`indexFolder` 与 `indexDroppedPaths` 开头都必须判定 `loadingActive` 后直接返回。少一个就会出现两个索引循环并发：进度条互相覆盖、状态文案打架，且双方都判定 `wasEmpty` 为 true 从而各 `fitBounds` 一次，视野跳两下。
 - **PMTiles 实例回收（易踩坑）**：pmtiles 4.x 的 `Protocol` **没有 `remove()`**（实测 `typeof` 为 `undefined`），内部 `tiles` 是无上限的 `Map`。原来写的 `protocol.remove(key)` 每次都抛 `TypeError` 并被空 `catch` 吞掉，导致实例（含目录缓存）全会话驻留、「清除所有」也回收不掉。回收必须走 `releaseProtocol(key)` → `protocol.tiles.delete(key)`。
 - **让出主线程**：索引循环每处理 10 个（拖拽通道 20 个）文件 `await yieldUI()` 一次，避免数百个文件时界面冻结。
@@ -94,7 +95,9 @@ PMTiles JS 的 Source 只需实现 `getKey()` 与 `getBytes(offset, length)`。�
 - **排序与限流**：候选源按 bounds 与视口的**相交面积降序**排序（优先保证大面积覆盖视口的源），最多激活 `MAX_ACTIVE_SOURCES`（24）个。
 - **加载 / 卸载**：`loadEntry()` 整体包在 try 内，注册协议实例、添加 source 与 layers；若中途失败必须就地按"先删图层、再删 source、最后移除协议"清理后再抛出，避免孤儿资源。`unloadSource()` 反向移除。
 - **首次定位**：两条索引通道都只在 `allEntries` 入口为空（`wasEmpty`）时才 `fitBounds`，追加文件不得重置用户当前视野。
-- **样式未就绪重试**：`updateViewport()` 在 `!map.isStyleLoaded()` 时最多重试 10 次（间隔 200ms）。计数器 `vpRetries` 只在**确实排入了一次重试**时自增，且用 `vpRetryTimer` 保证同一时刻只有一个待执行重试——否则鼠标移动会经 file-drop 的透明 `<input>` 高频触发本函数，把预算在一次样式切换内烧光，导致视口刷新永久丢失。
+- **样式未就绪重试**：`updateViewport()` 在 `!map.isStyleLoaded()` 时最多重试 10 次（间隔 200ms）。计数器 `vpRetries` 只在**确实排入了一次重试**时自增，且用 `vpRetryTimer` 保证同一时刻只有一个待执行重试——否则鼠标移动会经 file-drop 的透明 `<input>` 高频触发本函数，把预算在一次样式切换内烧光，导致视口刷新永久丢失。**预算必须能被复位**：`vpRetries` 只在样式就绪时清零，而样式就绪后是否还有 `moveend` 取决于用户，所以两条索引入口与「清除所有」都要调 `resetViewportRetry()`。
+- **拖入空结果的收口（勿拆回两个回调）**：`loadDroppedPaths()` 用一个 `done()` 统一递减 `pending`，无论 resolve / reject 都走它，并在 `allFilePaths` 为空时写状态栏「未找到 .t / .pmtiles 文件」。原来在两个回调里各写一次 `if (--pending === 0 && allFilePaths.length)`，空结果时既不调索引也不提示。
+- **两条通道的"已选文件数"口径统一**：直接用 `allEntries.length`。曾经有一个只在文件夹通道累加的 `accumulatedFiles`，两通道混用时提示会显示比实际少的数字（已删除）。
 
 ### 4. 渲染策略（语义化配色，对齐 COROS 手表）
 
@@ -103,13 +106,14 @@ PMTiles JS 的 Source 只需实现 `getKey()` 与 `getBytes(offset, length)`。�
 - **道路绘制**：每个等级画 casing（描边）+ fill（铺面）两层；低 zoom 次/支路为浅灰细线、高 zoom（约 z15）为白色铺面（`lowHighExpr` 随 zoom 插值），主干道/高速为 peach/salmon 色；E29 步道、以及 E13 中 `i`=19/23 的公园步道/步行街为黑色虚线（`line-dasharray`，后者在 local 过滤器中排除、并入 trail 层）。线宽刻意收窄以露出沿路 E7 绿带。名称字段为 `X`，道路名/POI 标签的 filter 与 text-field 都必须兼容 X。
 - **POI 图标**：使用 `src/sprites/coros/`（统一蓝色圆形 + 白色字形），由构建脚本 `tools/build-coros-sprite.js` 从 v4/light 白色字形掩膜生成；该精灵缺省不随主题变色。医院/停车/加油/露营/高尔夫为脚本手绘字形。
 - **VCM**：`Q` 层等高线，按 `F`（高程）`% 50` 区分首曲线 / 计曲线，淡棕褐色细线。**没有 hover 高亮**——曾尝试用 `feature-state` 提升不透明度，但实测 36 个 z11 瓦片里 Q 层 43 个要素只有 5 个高程值（`F=600` 跨 15 个瓦片），而 `feature-state` 以 `(sourceLayer, id)` 为键且跨瓦片生效，hover 一条线会点亮整个 source 内所有同高程线。高程天然不唯一，不能当要素 id。
-- **全局叠放顺序**：所有图层按 `SLOT_ORDER`（自底向顶：地表/水体 → 道路（支路→高速）→ 步道/铁路 → 图标 → 各类文字）由 `reorderLayers()` 通过 `moveLayer` 重排，保证多源叠放一致。**只在 `updateViewport()` 末尾对整批调用一次**——不要挪回 `loadEntry()` 内部：单 VSM 源 27 层 × 最多 24 源，逐层触发会变成单次刷新约 7800 次 `moveLayer`。
+- **全局叠放顺序**：所有图层按 `SLOT_ORDER`（自底向顶：地表/水体 → 道路（支路→高速）→ 步道/铁路 → 图标 → 各类文字）由 `reorderLayers()` 通过 `moveLayer` 重排，保证多源叠放一致。**只在 `updateViewport()` 末尾对整批调用一次，且只在有新源加载时调用**——不要挪回 `loadEntry()` 内部：单 VSM 源 27 层 × 最多 24 源，逐层触发会变成单次刷新约 7800 次 `moveLayer`；纯卸载不改变剩余图层的相对顺序，不值得再排一次。
 - **要素 id（`promoteId`）**：VCM **不提升**（见上一条）；VSM / generic 为每个 source-layer 提升数字字段 `E`（缺失则 id 为空，无副作用）。目前没有图层消费 `feature-state`，`promoteId` 只为将来按要素着色预留。
 - **类型识别 `detectType`**：优先匹配路径中的 `VCM` / `VSM` 目录，其次匹配文件名 `C` / `S` 前缀，最后按 `.pmtiles` 后缀归为 generic（generic 保留按几何类型 + 随机色的回退渲染）。
 - **主题持久化**：选择结果存在 `localStorage` 键 `mapviewer-theme-v2`（缺省 `light`）。v2 键刻意与早期版本的 `dark` 残留隔离；改键名等于让老用户主题重置，需谨慎。
-- **要素点击优先级**：`click` 处理会跳过 id 以 `_fill` 结尾的图层，避免半透明面要素压在线 / 点 / 标注之上。`queryRenderedFeatures` 的返回顺序不可依赖，不要改成直接取 `features[0]`。
+- **要素点击优先级**：`click` 处理跳过 `layer.type === "fill"` 的要素，避免半透明面要素压在线 / 点 / 标注之上。**不要用图层 id 后缀判断**——只有 generic 通道的图层叫 `xxx_fill`，VSM 的面层是 `_landcover` / `_water` / `_protected` / `_airportfill` / `_roadarea`，以 `_fill` 结尾判断等于反向筛选。`queryRenderedFeatures` 的返回顺序不可依赖，不要改成直接取 `features[0]`。
+- **等高线 filter 必须带 `["has","F"]`**：首曲线与计曲线两层都要判。缺 `F` 的要素会让 `["%", null, 50]` 求值失败，MapLibre 按整层表达式错误处理——表现是**整层等高线消失**，而不是只丢那一个要素。
 - **鼠标移动只有一个监听器**：坐标显示与 hover 光标反馈合并注册在 `mousemove` 上（曾有第二个监听器各做一次无层过滤的 `queryRenderedFeatures`）。查询只针对 `refreshHoverableLayers()` 缓存的**非 fill 图层**列表（源增删时重建），且只在命中结果变化时才改 `style.cursor`。新增需要根据 hover 写样式的功能时，先确认要素 id 是否真的唯一，别重蹈 VCM 的覆辙。
-- **日志缓冲**：调试日志最多保留 80 行（`debugLines.shift()`），错误行加红色左竖线、警告行加黄色左竖线；所有写入均经 `escapeHtml()`。
+- **日志缓冲**：调试日志最多保留 80 行，错误行加红色左竖线、警告行加黄色左竖线；所有写入均经 `escapeHtml()`。**用 `appendChild` 增量追加、超限时删首节点**，不要改回"把整个数组 `join()` 后重设 `innerHTML`"——瓦片/字形加载失败时 `error` 事件是高频的，那样会变成持续的全量 DOM 重建 + 每次读 `scrollHeight` 触发同步布局。面板不可见时不滚动。
 
 ### 5. 自定义窗口
 
