@@ -929,7 +929,9 @@
                 placeLabel: "#9b403b",
                 peakLabel: "#5c4c3c",
                 halo: "#ffffff",
-                contourMinor: "#e3cfb4", contourIndex: "#bb8c5a"
+                // 旧值 #e3cfb4 在淡绿林地上对比度仅约 1.2:1，首曲线几乎消失；
+                // 加深为中棕褐（约 2.5:1），计曲线同步加深、保持层级差
+                contourMinor: "#a98c64", contourIndex: "#9c6d40"
             },
             dark: {
                 bg: "#15151f",
@@ -1549,7 +1551,7 @@
                 filter: ["all", ["has", "F"], ["!=", ["%", ["get", "F"], 50], 0]],
                 paint: { "line-color": p.contourMinor,
                     "line-width": ["interpolate", ["linear"], ["zoom"], 9, 0.45, 13, 0.85],
-                    "line-opacity": 0.75 } },
+                    "line-opacity": 0.85 } },
                 "contour");
             bindPaint(ctx, id0, "line-color", function (pp) { return pp.contourMinor; });
 
