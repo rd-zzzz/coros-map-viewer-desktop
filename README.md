@@ -308,7 +308,7 @@ npx tauri build
 | 文件 | 大小 | 说明 |
 |---|---|---|
 | `src-tauri/target/release/map-app.exe` | ~8.7 MB | 绿色版可执行文件，可直接运行 |
-| `src-tauri/target/release/bundle/nsis/MapViewer_0.3.0_x64-setup.exe` | ~6.8 MB | NSIS 安装包 |
+| `src-tauri/target/release/bundle/nsis/MapViewer_0.3.1_x64-setup.exe` | ~6.8 MB | NSIS 安装包 |
 
 ### 开发模式
 

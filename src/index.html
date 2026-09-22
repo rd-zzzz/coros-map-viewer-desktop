@@ -604,7 +604,7 @@
             </div>
             <div class="about">
                 <div class="about-title">关于 MapViewer</div>
-                <div class="about-line">v0.3.0 · 完全离线版</div>
+                <div class="about-line">v0.3.1 · 完全离线版</div>
                 <div class="about-sub">Tauri 2 · MapLibre GL JS · PMTiles</div>
             </div>
         </div>
@@ -1659,7 +1659,9 @@
                 }, 200);
                 return;
             }
-            vpRetries = 0;
+            // 样式已就绪：复位重试预算并清掉可能仍挂起的 timer，
+            // 否则该 timer 会再触发一次多余的 updateViewport()
+            resetViewportRetry();
 
             var z = map.getZoom();
             var b = map.getBounds();
