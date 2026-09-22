@@ -40,8 +40,8 @@
             --map-bg: #1a1a2e;
         }
         body.light-theme {
-            --bg-panel: rgba(248, 246, 241, 0.95);
-            --bg-panel-solid: #f8f6f1;
+            --bg-panel: rgba(248, 249, 251, 0.94);
+            --bg-panel-solid: #f7f8fa;
             --bg-surface: rgba(0,0,0,0.04);
             --bg-surface-hover: rgba(0,0,0,0.07);
             --border: rgba(0, 0, 0, 0.1);
@@ -60,7 +60,7 @@
             --purple: #7c3aed;
             --green: #16a34a;
             --shadow: 0 4px 24px rgba(0,0,0,0.1);
-            --map-bg: #e8e6e1;
+            --map-bg: #e9ebf0;
         }
 
         * { margin: 0; padding: 0; box-sizing: border-box; }
@@ -100,7 +100,7 @@
         .win-btn:hover { background: rgba(255,255,255,0.1); color: #fff; }
         .win-btn.close:hover { background: #e81123; color: #fff; }
         .win-btn svg { width: 12px; height: 12px; }
-        body.light-theme .win-btn:hover { background: rgba(0,0,0,0.06); }
+        body.light-theme .win-btn:hover { background: rgba(0,0,0,0.06); color: var(--text-primary); }
         body.light-theme .toggle-row { border-top-color: rgba(0,0,0,0.06); }
         body.light-theme .toggle-track { background: rgba(0,0,0,0.12); }
         body.light-theme #progress-bar { background: rgba(0,0,0,0.06); }
@@ -108,7 +108,7 @@
         body.light-theme .prop-table td { border-bottom-color: rgba(0,0,0,0.04); }
         body.light-theme ::-webkit-scrollbar-thumb { background: rgba(0,0,0,0.15); }
         body.light-theme ::-webkit-scrollbar-thumb:hover { background: rgba(0,0,0,0.25); }
-        body.light-theme #zoom-nav .zoom-btn:hover { background: rgba(0,0,0,0.06); }
+        body.light-theme #zoom-nav .zoom-btn:hover { background: rgba(0,0,0,0.06); color: var(--text-primary); }
         body.light-theme #zoom-nav .zoom-btn + .zoom-btn { border-top-color: var(--border); }
 
         /* ============================================================
@@ -315,11 +315,11 @@
             border-bottom: 1px solid rgba(255,255,255,0.03);
         }
         .prop-table td:first-child {
-            width: 90px; color: var(--purple); font-weight: 500;
+            width: 90px; color: var(--text-muted); font-weight: 500;
             white-space: nowrap; font-family: "Consolas", monospace;
         }
         .prop-table td:last-child {
-            color: var(--green); word-break: break-all;
+            color: var(--text-primary); word-break: break-all;
             font-family: "Consolas", monospace;
         }
         .info-footer {
@@ -519,10 +519,6 @@
                 <div class="stat-card">
                     <div class="stat-val" id="stat-active">0</div>
                     <div class="stat-label">已加载</div>
-                </div>
-                <div class="stat-card">
-                    <div class="stat-val" id="stat-zoom">Z8.0</div>
-                    <div class="stat-label">缩放</div>
                 </div>
             </div>
 
@@ -746,7 +742,7 @@
                 transit: "#3a86d1",       // L E3 地铁/BRT
                 waterLine: "#5cb1c2",     // P/O 水系线
                 roadLabel: "#3d3d43",
-                poiLabel: "#a1413c",
+                poiLabel: "#55595f",
                 placeLabel: "#9b403b",
                 peakLabel: "#5c4c3c",
                 halo: "#ffffff",
@@ -773,7 +769,7 @@
                 transit: "#5aa0e0",
                 waterLine: "#4d93a8",
                 roadLabel: "#d4d5db",
-                poiLabel: "#e08a84",
+                poiLabel: "#b6b9c2",
                 placeLabel: "#dd867f",
                 peakLabel: "#c8b39c",
                 halo: "#14141c",
@@ -817,7 +813,6 @@
         map.on("zoom", function () {
             var z = map.getZoom();
             zoomValueEl.textContent = "Z " + z.toFixed(2);
-            document.getElementById("stat-zoom").textContent = "Z" + z.toFixed(1);
             updateScaleBar();
         });
         map.on("move", function () { updateScaleBar(); });
@@ -1661,7 +1656,6 @@
             var n = 0; for (var k in loadedSources) n++;
             document.getElementById("stat-indexed").textContent = allEntries.length;
             document.getElementById("stat-active").textContent = n;
-            document.getElementById("stat-zoom").textContent = "Z" + map.getZoom().toFixed(1);
         }
 
         /* ============================================================
