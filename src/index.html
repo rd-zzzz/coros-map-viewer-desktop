@@ -458,6 +458,11 @@
         /* ============================================================
            Buttons / Errors / About / Empty / Overlay / File List
         ============================================================ */
+        /* CSP: Tauri 给 style-src 注入 nonce 后 'unsafe-inline' 被忽略，
+           元素 style 属性会失效；初始隐藏/光标状态必须写在样式表中，
+           后续显隐由 JS 经 CSSOM 切换（不受 CSP 限制）。 */
+        #controls-toggle { cursor: pointer; }
+        #btn-clear-all, #btn-file-list, #btn-cancel-index { display: none; }
         .btn-file-list {
             width: 100%; margin-top: 8px; padding: 6px 0;
             background: var(--bg-surface); border: 1px solid var(--border);
@@ -550,7 +555,7 @@
 
     <!-- Controls Panel -->
     <div id="controls" class="panel">
-        <div class="panel-header" id="controls-toggle" style="cursor:pointer">
+        <div class="panel-header" id="controls-toggle">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
             设置
             <svg class="collapse-icon" viewBox="0 0 12 12" width="12" height="12"><polyline points="2,4 6,8 10,4" fill="none" stroke="currentColor" stroke-width="1.5"/></svg>
@@ -562,11 +567,11 @@
                 <div class="drop-hint">支持 VCM / VSM 子目录及 .pmtiles 文件</div>
                 <input type="file" id="folder-input" webkitdirectory multiple />
             </div>
-            <button id="btn-clear-all" class="btn-clear-all" style="display:none">清除所有文件</button>
-            <button id="btn-file-list" class="btn-file-list" style="display:none">文件列表</button>
+            <button id="btn-clear-all" class="btn-clear-all">清除所有文件</button>
+            <button id="btn-file-list" class="btn-file-list">文件列表</button>
             <div id="main-status"></div>
             <div id="progress-bar"><div class="pct" id="progress-pct"></div><div class="fill" id="progress-fill"></div></div>
-            <button id="btn-cancel-index" class="btn-cancel-index" style="display:none">取消索引</button>
+            <button id="btn-cancel-index" class="btn-cancel-index">取消索引</button>
             <div id="index-errors"></div>
 
             <div class="toggle-row">
