@@ -455,6 +455,79 @@
         }
         #scale-bar .scale-line::before { left: 0; }
         #scale-bar .scale-line::after { right: 0; }
+        /* ============================================================
+           Buttons / Errors / About / Empty / Overlay / File List
+        ============================================================ */
+        .btn-file-list {
+            width: 100%; margin-top: 8px; padding: 6px 0;
+            background: var(--bg-surface); border: 1px solid var(--border);
+            border-radius: var(--radius-sm); color: var(--text-secondary);
+            font-size: 11px; cursor: pointer; transition: all var(--transition);
+        }
+        .btn-file-list:hover { background: var(--bg-surface-hover); color: var(--text-primary); }
+        .btn-cancel-index {
+            width: 100%; margin-top: 8px; padding: 5px 0;
+            background: var(--warn-dim); border: 1px solid rgba(217,119,6,0.3);
+            border-radius: var(--radius-sm); color: var(--warn);
+            font-size: 11px; cursor: pointer; transition: all var(--transition);
+        }
+        .btn-cancel-index:hover { border-color: var(--warn); }
+        #index-errors { margin-top: 8px; font-size: 10px; max-height: 130px; overflow-y: auto; }
+        #index-errors .err-head { color: var(--error); font-weight: 600; margin-bottom: 4px; }
+        #index-errors .err-item { color: var(--text-secondary); padding: 2px 0; border-bottom: 1px dashed var(--border); word-break: break-all; }
+        .about { margin-top: 12px; padding-top: 10px; border-top: 1px solid var(--border); }
+        .about-title { font-size: 11px; font-weight: 600; color: var(--text-secondary); }
+        .about-line { font-size: 10px; color: var(--text-muted); margin-top: 3px; }
+        .about-sub { font-size: 9px; color: var(--text-muted); margin-top: 2px; opacity: 0.8; }
+
+        #empty-state {
+            position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%);
+            z-index: 5; text-align: center; color: var(--text-muted);
+            pointer-events: none; user-select: none;
+        }
+        #empty-state svg { width: 46px; height: 46px; opacity: 0.35; margin-bottom: 10px; }
+        #empty-state .es-title { font-size: 14px; color: var(--text-secondary); opacity: 0.7; }
+        #empty-state .es-sub { font-size: 10px; margin-top: 6px; opacity: 0.8; }
+        #empty-state.hidden { display: none; }
+
+        #drag-overlay {
+            position: fixed; inset: 0; z-index: 200; display: none;
+            background: rgba(37, 99, 235, 0.12);
+            backdrop-filter: blur(2px);
+        }
+        #drag-overlay.show { display: flex; align-items: center; justify-content: center; }
+        #drag-overlay .do-card {
+            background: var(--bg-panel-solid); border: 2px dashed var(--accent);
+            border-radius: var(--radius); padding: 28px 44px;
+            color: var(--accent); font-size: 14px; text-align: center;
+            box-shadow: var(--shadow);
+        }
+        #drag-overlay .do-card svg { width: 40px; height: 40px; margin: 0 auto 10px; opacity: 0.8; }
+
+        #filelist-panel {
+            position: fixed; left: 304px;
+            top: calc(var(--titlebar-h) + 12px);
+            bottom: calc(var(--statusbar-h) + 12px);
+            width: 340px; z-index: 40; display: none;
+        }
+        #filelist-panel.show { display: flex; flex-direction: column; }
+        #filelist-panel .fl-summary { font-size: 10px; color: var(--text-muted); margin-left: auto; margin-right: 8px; }
+        #filelist-panel .panel-body { padding: 0; max-height: none; flex: 1; overflow-y: auto; }
+        .fl-row {
+            display: flex; align-items: center; gap: 8px;
+            padding: 7px 14px; cursor: pointer; font-size: 11px;
+            border-bottom: 1px solid var(--border);
+        }
+        .fl-row:hover { background: var(--bg-surface-hover); }
+        .fl-badge {
+            font-size: 9px; font-weight: 600; padding: 2px 6px; border-radius: 3px;
+            min-width: 38px; text-align: center; flex-shrink: 0;
+        }
+        .fl-badge.vcm { background: var(--accent-dim); color: var(--accent); }
+        .fl-badge.vsm { background: var(--success-dim); color: var(--success); }
+        .fl-badge.pmt { background: var(--warn-dim); color: var(--warn); }
+        .fl-name { flex: 1; color: var(--text-secondary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+        .fl-z { font-size: 9px; color: var(--text-muted); font-family: Consolas, monospace; flex-shrink: 0; }
     </style>
 </head>
 <body>
@@ -490,8 +563,11 @@
                 <input type="file" id="folder-input" webkitdirectory multiple />
             </div>
             <button id="btn-clear-all" class="btn-clear-all" style="display:none">清除所有文件</button>
+            <button id="btn-file-list" class="btn-file-list" style="display:none">文件列表</button>
             <div id="main-status"></div>
             <div id="progress-bar"><div class="pct" id="progress-pct"></div><div class="fill" id="progress-fill"></div></div>
+            <button id="btn-cancel-index" class="btn-cancel-index" style="display:none">取消索引</button>
+            <div id="index-errors"></div>
 
             <div class="toggle-row">
                 <span class="toggle-label">显示 VCM 等高线</span>
@@ -526,6 +602,11 @@
                 最小缩放 Z8.0 · 点击要素查看属性<br>
                 右下角按钮切换调试日志
             </div>
+            <div class="about">
+                <div class="about-title">关于 MapViewer</div>
+                <div class="about-line">v0.2.1 · 完全离线版</div>
+                <div class="about-sub">Tauri 2 · MapLibre GL JS · PMTiles</div>
+            </div>
         </div>
     </div>
 
@@ -540,6 +621,32 @@
             <div class="scale-line"></div>
             <span id="scale-text">—</span>
         </div>
+    </div>
+
+    <!-- Empty State -->
+    <div id="empty-state">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.3"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>
+        <div class="es-title">拖入地图文件夹开始浏览</div>
+        <div class="es-sub">支持 VCM / VSM 的 .t 文件及 .pmtiles</div>
+    </div>
+
+    <!-- Native Drag Overlay -->
+    <div id="drag-overlay">
+        <div class="do-card">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>
+            <div>松开以加载地图文件</div>
+        </div>
+    </div>
+
+    <!-- File List Drawer -->
+    <div id="filelist-panel" class="panel">
+        <div class="panel-header">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+            文件列表
+            <span id="fl-summary" class="fl-summary"></span>
+            <button class="close-btn" id="filelist-close" title="关闭">&times;</button>
+        </div>
+        <div class="panel-body" id="filelist-body"></div>
     </div>
 
     <!-- Info Panel -->
@@ -578,10 +685,7 @@
             <span class="sb-label">坐标</span>
             <span class="sb-value" id="sb-coords">—</span>
         </div>
-        <div class="sb-center">
-            <span class="sb-label">瓦片</span>
-            <span class="sb-value" id="sb-tile">—</span>
-        </div>
+
         <div class="sb-right">
             <span class="sb-dot" id="sb-dot"></span>
             <span class="sb-value" id="sb-status">Ready</span>
@@ -676,6 +780,8 @@
         var vcmVisible = true;
         var MAX_ACTIVE_SOURCES = 24;
         var loadingActive = false;
+        var indexCancelRequested = false;
+        var indexErrors = [];
         var accumulatedFiles = [];
         var accumulatedNames = {};
         // P1-3: 缓存的「可 hover 图层」id 列表与当前光标状态，供合并后的 mousemove 使用
@@ -686,7 +792,6 @@
            Status Bar Helpers
         ============================================================ */
         var sbCoords = document.getElementById("sb-coords");
-        var sbTile = document.getElementById("sb-tile");
         var sbDot = document.getElementById("sb-dot");
         var sbStatus = document.getElementById("sb-status");
 
@@ -746,7 +851,7 @@
                 placeLabel: "#9b403b",
                 peakLabel: "#5c4c3c",
                 halo: "#ffffff",
-                contourMinor: "#d9c3a4", contourIndex: "#c49a6e"
+                contourMinor: "#e3cfb4", contourIndex: "#bb8c5a"
             },
             dark: {
                 bg: "#15151f",
@@ -773,7 +878,7 @@
                 placeLabel: "#dd867f",
                 peakLabel: "#c8b39c",
                 halo: "#14141c",
-                contourMinor: "#7a6a52", contourIndex: "#9a7d5a"
+                contourMinor: "#74644d", contourIndex: "#a5865e"
             }
         };
 
@@ -847,13 +952,6 @@
         map.on("mousemove", function (e) {
             var ll = e.lngLat;
             sbCoords.textContent = ll.lat.toFixed(4) + ", " + ll.lng.toFixed(4);
-            var z = Math.floor(map.getZoom());
-            if (z >= 0) {
-                var tx = Math.floor((ll.lng + 180) / 360 * Math.pow(2, z));
-                var latRad = ll.lat * Math.PI / 180;
-                var ty = Math.floor((1 - Math.log(Math.tan(latRad) + 1 / Math.cos(latRad)) / Math.PI) / 2 * Math.pow(2, z));
-                sbTile.textContent = z + "/" + Math.max(0, tx) + "/" + Math.max(0, ty);
-            }
             var want = "";
             if (hoverableLayers.length) {
                 want = map.queryRenderedFeatures(e.point, { layers: hoverableLayers }).length ? "pointer" : "";
@@ -1079,7 +1177,8 @@
                 var idf = sn + "_landcover";
                 addTagged(ctx, { id: idf, source: sn, "source-layer": "F", type: "fill",
                     filter: ["==", ["geometry-type"], "Polygon"],
-                    paint: { "fill-color": landcoverExpr(p) } }, "landcover");
+                    paint: { "fill-color": landcoverExpr(p),
+                        "fill-opacity": ["interpolate", ["linear"], ["zoom"], 9, 0.35, 11.5, 1] } }, "landcover");
                 bindPaint(ctx, idf, "fill-color", landcoverExpr);
             }
 
@@ -1157,12 +1256,13 @@
             function color(key) {
                 return function (pp) { return pp[key]; };
             }
-            function line(suffix, slot, classFilter, colorMake, widthExpr, dash) {
+            function line(suffix, slot, classFilter, colorMake, widthExpr, dash, opacityExpr) {
                 var id = sn + "_" + suffix;
                 // line-cap / line-join 是 LAYOUT 属性，放 paint 会校验失败、整层被跳过
                 var layout = { "line-cap": "round", "line-join": "round" };
                 var paint = { "line-color": colorMake(p), "line-width": widthExpr };
                 if (dash) paint["line-dasharray"] = dash;
+                if (opacityExpr) paint["line-opacity"] = opacityExpr;
                 addTagged(ctx, { id: id, source: sn, "source-layer": "L", type: "line",
                     filter: ["all", ["==", ["geometry-type"], "LineString"], classFilter],
                     layout: layout, paint: paint }, slot);
@@ -1206,7 +1306,8 @@
                 ["any", ["==", ["get", "E"], 29],
                     ["all", ["==", ["get", "E"], 13],
                         ["in", ["coalesce", ["get", "i"], -1], PEDESTRIAN_I]]],
-                color("trail"), width(12, 0.6, 15, 1.3), [1.3, 0.9]);
+                color("trail"), width(12, 0.6, 15, 1.3), [1.3, 0.9],
+                ["interpolate", ["linear"], ["zoom"], 13, 0.55, 15, 1]);
             line("rail", "rail", ["==", ["get", "E"], 2],
                 color("rail"), width(10, 0.5, 14, 1.3), [2.4, 1.6]);
             line("transit", "transit", ["==", ["get", "E"], 3],
@@ -1240,27 +1341,57 @@
             bindPaint(ctx, id, "line-color", function (pp) { return pp.waterLine; });
         }
 
+        // POI 密度分级：重要类别（有专属图标的大类）z12.5 起显示；
+        // 兜底圆点 z14.5 起；标签同样分两档，避免城区蓝点/文字过密。
+        var IMPORTANT_POI_ES = [1, 4, 5, 7, 8, 11, 13, 19, 22, 25, 27, 30, 36, 52];
+
         function buildPOILayers(sn, p, ctx) {
+            var mainFilter = ["in", ["get", "E"], ["literal", IMPORTANT_POI_ES]];
+            var minorFilter = ["!", ["in", ["get", "E"], ["literal", IMPORTANT_POI_ES]]];
+
             var id = sn + "_poi";
             addTagged(ctx, { id: id, source: sn, "source-layer": "K", type: "symbol",
-                filter: ["all", ["==", ["geometry-type"], "Point"], ["has", "E"]],
+                filter: ["all", ["==", ["geometry-type"], "Point"], mainFilter],
+                minzoom: 12.5,
                 layout: { "icon-image": POI_ICON_EXPR,
                     "icon-size": ["interpolate", ["linear"], ["zoom"], 12, 0.62, 14, 0.82],
+                    "icon-allow-overlap": false } }, "poi-icon");
+
+            var idm = sn + "_poi_minor";
+            addTagged(ctx, { id: idm, source: sn, "source-layer": "K", type: "symbol",
+                filter: ["all", ["==", ["geometry-type"], "Point"], minorFilter],
+                minzoom: 14.5,
+                layout: { "icon-image": POI_ICON_EXPR,
+                    "icon-size": ["interpolate", ["linear"], ["zoom"], 14, 0.55, 16, 0.7],
                     "icon-allow-overlap": false } }, "poi-icon");
 
             var idl = sn + "_poilabel";
             addTagged(ctx, { id: idl, source: sn, "source-layer": "K", type: "symbol",
                 filter: ["all", ["==", ["geometry-type"], "Point"],
-                    ["any", ["has", "X"], ["has", "name"]]],
-                minzoom: 13,
+                    ["any", ["has", "X"], ["has", "name"]], mainFilter],
+                minzoom: 13.5,
                 layout: { "text-field": ["coalesce", ["get", "name"], ["get", "X"]],
                     "text-font": ["Noto Sans Regular"],
-                    "text-size": ["interpolate", ["linear"], ["zoom"], 13, 9.5, 14, 11],
+                    "text-size": ["interpolate", ["linear"], ["zoom"], 13, 9, 15, 10.5],
                     "text-offset": [0, 1.4] },
                 paint: { "text-color": p.poiLabel, "text-halo-color": p.halo,
                     "text-halo-width": 1.5 } }, "poi-label");
             bindPaint(ctx, idl, "text-color", function (pp) { return pp.poiLabel; });
             bindPaint(ctx, idl, "text-halo-color", function (pp) { return pp.halo; });
+
+            var idl2 = sn + "_poilabel_minor";
+            addTagged(ctx, { id: idl2, source: sn, "source-layer": "K", type: "symbol",
+                filter: ["all", ["==", ["geometry-type"], "Point"],
+                    ["any", ["has", "X"], ["has", "name"]], minorFilter],
+                minzoom: 15,
+                layout: { "text-field": ["coalesce", ["get", "name"], ["get", "X"]],
+                    "text-font": ["Noto Sans Regular"],
+                    "text-size": ["interpolate", ["linear"], ["zoom"], 15, 9, 16, 10],
+                    "text-offset": [0, 1.3] },
+                paint: { "text-color": p.poiLabel, "text-halo-color": p.halo,
+                    "text-halo-width": 1.4 } }, "poi-label");
+            bindPaint(ctx, idl2, "text-color", function (pp) { return pp.poiLabel; });
+            bindPaint(ctx, idl2, "text-halo-color", function (pp) { return pp.halo; });
         }
 
         function buildPlaceLayers(sn, p, ctx) {
@@ -1268,13 +1399,13 @@
             addTagged(ctx, { id: id, source: sn, "source-layer": "J", type: "symbol",
                 filter: ["==", ["geometry-type"], "Point"],
                 layout: { "text-field": ["coalesce", ["get", "name"], ["get", "X"]],
-                    "text-font": ["Noto Sans Regular"],
+                    "text-font": ["Noto Sans Medium"],
                     "text-size": ["match", ["get", "E"],
-                        5, 13.5,
-                        6, 11.5,
-                        10, 10.5, 11, 10.5, 16, 10.5,
-                        7, 9.5, 8, 9.5, 12, 9.5,
-                        10] },
+                        5, 14,
+                        6, 12,
+                        10, 11, 11, 11, 16, 11,
+                        7, 10, 8, 10, 12, 10,
+                        10.5] },
                 paint: { "text-color": p.placeLabel, "text-halo-color": p.halo,
                     "text-halo-width": 1.8 } }, "place-label");
             bindPaint(ctx, id, "text-color", function (pp) { return pp.placeLabel; });
@@ -1317,7 +1448,7 @@
             addTagged(ctx, { id: id0, source: sn, "source-layer": "Q", type: "line",
                 filter: ["!=", ["%", ["get", "F"], 50], 0],
                 paint: { "line-color": p.contourMinor,
-                    "line-width": ["interpolate", ["linear"], ["zoom"], 9, 0.4, 13, 0.8],
+                    "line-width": ["interpolate", ["linear"], ["zoom"], 9, 0.45, 13, 0.85],
                     "line-opacity": 0.75 } },
                 "contour");
             bindPaint(ctx, id0, "line-color", function (pp) { return pp.contourMinor; });
@@ -1326,10 +1457,26 @@
             addTagged(ctx, { id: id1, source: sn, "source-layer": "Q", type: "line",
                 filter: ["==", ["%", ["get", "F"], 50], 0],
                 paint: { "line-color": p.contourIndex,
-                    "line-width": ["interpolate", ["linear"], ["zoom"], 9, 0.7, 13, 1.4],
+                    "line-width": ["interpolate", ["linear"], ["zoom"], 9, 0.75, 13, 1.5],
                     "line-opacity": 0.9 } },
                 "contour");
             bindPaint(ctx, id1, "line-color", function (pp) { return pp.contourIndex; });
+
+            // 计曲线（每 50）沿线条标注高程数字，户外地图刚需
+            var idl = sn + "_contourlabel";
+            addTagged(ctx, { id: idl, source: sn, "source-layer": "Q", type: "symbol",
+                filter: ["all", ["==", ["%", ["get", "F"], 50], 0], ["has", "F"]],
+                minzoom: 10.5,
+                layout: { "symbol-placement": "line",
+                    "symbol-spacing": 180,
+                    "text-field": ["to-string", ["get", "F"]],
+                    "text-font": ["Noto Sans Regular"],
+                    "text-size": 9,
+                    "text-padding": 2 },
+                paint: { "text-color": p.contourIndex, "text-halo-color": p.halo,
+                    "text-halo-width": 1.4 } }, "contour");
+            bindPaint(ctx, idl, "text-color", function (pp) { return pp.contourIndex; });
+            bindPaint(ctx, idl, "text-halo-color", function (pp) { return pp.halo; });
         }
 
         /* ---------- Generic PMTiles 回退（保留随机配色诊断风格） ---------- */
@@ -1540,6 +1687,9 @@
 
             var newCount = 0, skipCount = 0, errCount = 0;
             var totalNew = 0;
+            indexCancelRequested = false;
+            indexErrors.length = 0;
+            document.getElementById("btn-cancel-index").textContent = "取消索引";
             for (var fi = 0; fi < files.length; fi++) {
                 var fn = files[fi].name.toLowerCase();
                 // P1-5: key 统一经 normalizePathKey，重复判定走 isKnownPath（可与拖拽通道
@@ -1565,12 +1715,14 @@
             statusEl.innerHTML = '<span class="dim">扫描中...</span>';
             progressFill.style.width = "0%";
             progress.style.display = "block";
+            document.getElementById("btn-cancel-index").style.display = "block";
             setLoading(true, "扫描中...");
 
             var vcmCount = 0, vsmCount = 0, genericCount = 0;
             var processed = 0;
 
             for (var idx = 0; idx < files.length; idx++) {
+                if (indexCancelRequested) break;
                 var file = files[idx];
                 if (!file.name.toLowerCase().endsWith(".t") && !file.name.toLowerCase().endsWith(".pmtiles")) continue;
                 var fileKey = normalizePathKey(file.webkitRelativePath || file.name);
@@ -1600,6 +1752,7 @@
                     newCount++;
                 } catch (e) {
                     errCount++;
+                    indexErrors.push({ name: file.name, msg: (e && e.message) ? e.message : String(e) });
                     if (errCount <= 3) dbg("Fail: " + file.name + ": " + e.message, "dbg-err");
                 }
 
@@ -1613,14 +1766,27 @@
                 }
             }
 
+            var canceledFolder = indexCancelRequested;
             progress.style.display = "none";
+            document.getElementById("btn-cancel-index").style.display = "none";
             fileDrop.querySelector(".drop-text").textContent = "已选择文件夹";
             fileDrop.querySelector(".drop-hint").textContent = accumulatedFiles.length + " 个文件（共 " + allEntries.length + " 条）";
-            statusEl.innerHTML = '<span class="ok">+' + newCount + " VCM=" + vcmCount + " VSM=" + vsmCount + (genericCount ? " Other=" + genericCount : "") +
-                (skipCount ? " · 跳过 " + skipCount + " 重复" : "") +
-                (errCount ? " · " + errCount + " 失败" : "") + "</span>";
+            if (canceledFolder) {
+                statusEl.innerHTML = '<span class="dim">已取消（已完成 ' + newCount + "）</span>";
+            } else {
+                statusEl.innerHTML = '<span class="ok">+' + newCount + " VCM=" + vcmCount + " VSM=" + vsmCount + (genericCount ? " Other=" + genericCount : "") +
+                    (skipCount ? " · 跳过 " + skipCount + " 重复" : "") +
+                    (errCount ? " · " + errCount + " 失败" : "") + "</span>";
+            }
             setLoading(false, "Ready");
             dbg("Added " + newCount + ", skipped " + skipCount + ", total " + allEntries.length + " entries", "dbg-ok");
+
+            var topFolder = "";
+            if (files[0] && files[0].webkitRelativePath) topFolder = files[0].webkitRelativePath.split("/")[0];
+            if (topFolder) setTitleSubtitle(topFolder);
+            renderIndexErrors();
+            renderFileList();
+            updateEmptyState();
 
             if (wasEmpty && allEntries.length > 0) {
                 var minLon = 180, minLat = 90, maxLon = -180, maxLat = -90;
@@ -1758,12 +1924,15 @@
             var listen = window.__TAURI__.event.listen;
             listen("tauri://drag-enter", function () {
                 fileDrop.classList.add("drag-over");
+                document.getElementById("drag-overlay").classList.add("show");
             });
             listen("tauri://drag-leave", function () {
                 fileDrop.classList.remove("drag-over");
+                document.getElementById("drag-overlay").classList.remove("show");
             });
             listen("tauri://drag-drop", function (event) {
                 fileDrop.classList.remove("drag-over");
+                document.getElementById("drag-overlay").classList.remove("show");
                 var paths = (event.payload && event.payload.paths) || [];
                 if (!paths.length) return;
                 loadDroppedPaths(paths);
@@ -1772,6 +1941,8 @@
 
         function loadDroppedPaths(paths) {
             dbg("Drag-drop: " + paths.length + " items");
+            var firstBase = String(paths[0]).replace(/^.*[\\\/]/, "");
+            if (firstBase) setTitleSubtitle(firstBase);
             var allFilePaths = [];
             var pending = paths.length;
 
@@ -1828,13 +1999,18 @@
 
             statusEl.innerHTML = '<span class="dim">扫描中...</span>';
             progress.style.display = "block";
+            document.getElementById("btn-cancel-index").style.display = "block";
             setLoading(true, "扫描中...");
 
             var vcmCount = 0, vsmCount = 0, genericCount = 0;
             var globalMinZoom = 99;
             var newCount = 0, errCount = 0;
+            indexCancelRequested = false;
+            indexErrors.length = 0;
+            document.getElementById("btn-cancel-index").textContent = "取消索引";
 
             for (var idx = 0; idx < newPaths.length; idx++) {
+                if (indexCancelRequested) break;
                 var fullPath = newPaths[idx];
                 var fileName = fullPath.replace(/^.*[\\\/]/, "");
 
@@ -1867,6 +2043,7 @@
                 } catch (e) {
                     errCount++;
                     var errMsg = (e && e.message) ? e.message : String(e || "unknown");
+                    indexErrors.push({ name: fileName, msg: errMsg });
                     if (errCount <= 5) dbg("Fail: " + fileName + ": " + errMsg, "dbg-err");
                 }
 
@@ -1879,13 +2056,22 @@
                 }
             }
 
+            var canceledDrop = indexCancelRequested;
             progress.style.display = "none";
+            document.getElementById("btn-cancel-index").style.display = "none";
             fileDropEl.querySelector(".drop-text").textContent = "已选择文件夹";
             fileDropEl.querySelector(".drop-hint").textContent = allEntries.length + " 个文件";
-            statusEl.innerHTML = '<span class="ok">+' + newCount + " VCM=" + vcmCount + " VSM=" + vsmCount + (genericCount ? " Other=" + genericCount : "") +
-                (errCount ? " · " + errCount + " 失败" : "") + "</span>";
+            if (canceledDrop) {
+                statusEl.innerHTML = '<span class="dim">已取消（已完成 ' + newCount + "）</span>";
+            } else {
+                statusEl.innerHTML = '<span class="ok">+' + newCount + " VCM=" + vcmCount + " VSM=" + vsmCount + (genericCount ? " Other=" + genericCount : "") +
+                    (errCount ? " · " + errCount + " 失败" : "") + "</span>";
+            }
             setLoading(false, "Ready");
             dbg("Done: +" + newCount + " entries, total=" + allEntries.length, "dbg-ok");
+            renderIndexErrors();
+            renderFileList();
+            updateEmptyState();
 
             if (wasEmpty) {
                 var minLon = 180, minLat = 90, maxLon = -180, maxLat = -90;
@@ -1909,6 +2095,77 @@
             updateViewport();
         }
 
+        /* ============================================================
+           Empty State / Title / Index Errors / File List / Cancel
+        ============================================================ */
+        var emptyState = document.getElementById("empty-state");
+        function updateEmptyState() {
+            if (allEntries.length === 0) emptyState.classList.remove("hidden");
+            else emptyState.classList.add("hidden");
+        }
+        updateEmptyState();
+
+        var titleText = document.querySelector("#titlebar .title-text");
+        function setTitleSubtitle(txt) { if (txt) titleText.textContent = txt; }
+
+        var indexErrorsBox = document.getElementById("index-errors");
+        function renderIndexErrors() {
+            if (!indexErrors.length) { indexErrorsBox.innerHTML = ""; return; }
+            var html = '<div class="err-head">' + indexErrors.length + ' 个文件失败</div>';
+            for (var ie = 0; ie < indexErrors.length; ie++) {
+                html += '<div class="err-item">' + escapeHtml(indexErrors[ie].name) + ' — ' +
+                    escapeHtml(indexErrors[ie].msg) + '</div>';
+            }
+            indexErrorsBox.innerHTML = html;
+        }
+
+        var filelistPanel = document.getElementById("filelist-panel");
+        var filelistBody = document.getElementById("filelist-body");
+        var flSummary = document.getElementById("fl-summary");
+        var btnFileList = document.getElementById("btn-file-list");
+
+        function typeBadge(t) {
+            if (t === "vcm") return '<span class="fl-badge vcm">VCM</span>';
+            if (t === "vsm") return '<span class="fl-badge vsm">VSM</span>';
+            return '<span class="fl-badge pmt">PMT</span>';
+        }
+        function renderFileList() {
+            var vc = 0, vs = 0, ot = 0;
+            var rows = "";
+            for (var fi = 0; fi < allEntries.length; fi++) {
+                var e = allEntries[fi];
+                if (e.type === "vcm") vc++; else if (e.type === "vsm") vs++; else ot++;
+                var nm = e.diskPath ? e.diskPath.replace(/^.*[\\\/]/, "") : (e.file ? e.file.name : "?");
+                var zr = "z" + e.header.minZoom + "-" + e.header.maxZoom;
+                rows += '<div class="fl-row" data-i="' + fi + '">' + typeBadge(e.type) +
+                    '<span class="fl-name">' + escapeHtml(nm) + '</span>' +
+                    '<span class="fl-z">' + zr + '</span></div>';
+            }
+            filelistBody.innerHTML = rows;
+            flSummary.textContent = "VCM " + vc + " / VSM " + vs + (ot ? " / Other " + ot : "");
+            btnFileList.textContent = "文件列表（" + allEntries.length + "）";
+            btnFileList.style.display = allEntries.length ? "block" : "none";
+        }
+
+        btnFileList.onclick = function () { filelistPanel.classList.add("show"); };
+        document.getElementById("filelist-close").onclick = function () {
+            filelistPanel.classList.remove("show");
+        };
+        filelistBody.addEventListener("click", function (ev) {
+            var row = ev.target.closest(".fl-row");
+            if (!row) return;
+            var e = allEntries[Number(row.getAttribute("data-i"))];
+            if (!e) return;
+            map.fitBounds([[e.bounds[0], e.bounds[1]], [e.bounds[2], e.bounds[3]]],
+                { padding: 60 });
+        });
+
+        var btnCancelIndexGlobal = document.getElementById("btn-cancel-index");
+        btnCancelIndexGlobal.onclick = function () {
+            indexCancelRequested = true;
+            btnCancelIndexGlobal.textContent = "正在取消...";
+        };
+
         /* Clear All */
         document.getElementById("btn-clear-all").onclick = function () {
             for (var s in loadedSources) unloadSource(s);
@@ -1917,6 +2174,13 @@
             accumulatedNames = {};
             // 清理项: 原来不收尾这些状态，清除后面板可能残留已删除源的属性、
             // hoverableLayers 仍指向已移除的图层、光标停留在 pointer
+            titleText.textContent = "";
+            indexErrors.length = 0;
+            indexErrorsBox.innerHTML = "";
+            filelistPanel.classList.remove("show");
+            btnCancelIndexGlobal.style.display = "none";
+            btnFileList.style.display = "none";
+            updateEmptyState();
             infoPanel.style.display = "none";
             lastProps = "";
             hoverableLayers = [];

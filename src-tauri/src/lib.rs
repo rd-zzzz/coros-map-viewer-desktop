@@ -71,6 +71,7 @@ fn scan_dir(dir: &PathBuf, out: &mut Vec<String>) -> Result<(), String> {
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
+        .plugin(tauri_plugin_window_state::Builder::default().build())
         .invoke_handler(tauri::generate_handler![
             read_path_as_files,
             read_file_slice
