@@ -210,13 +210,6 @@
         .file-drop.has-file { border-style: solid; border-color: var(--success); background: var(--success-dim); }
         .file-drop.has-file svg { color: var(--success); }
         .file-drop.drag-over { border-color: var(--accent) !important; background: var(--accent-dim) !important; transform: scale(1.02); }
-        .btn-clear-all {
-            width: 100%; margin-top: 8px; padding: 6px 0;
-            background: var(--error-dim); border: 1px solid rgba(248,113,113,0.3);
-            border-radius: var(--radius-sm); color: var(--error);
-            font-size: 11px; cursor: pointer; transition: all var(--transition);
-        }
-        .btn-clear-all:hover { background: rgba(248,113,113,0.2); border-color: var(--error); }
 
         /* Toggle Switch */
         .toggle-row {
@@ -266,12 +259,12 @@
             overflow: hidden; display: none; position: relative;
         }
         #progress-bar .fill {
-            height: 100%; border-radius: 2px;
+            height: 100%; width: 0; border-radius: 2px;
             background: linear-gradient(90deg, var(--accent), #818cf8);
             box-shadow: 0 0 8px rgba(96,165,250,0.4);
             transition: width 0.2s ease;
         }
-        #progress-bar .pct {
+        #progress-pct {
             position: absolute; right: 0; top: -16px;
             font-size: 10px; color: var(--text-muted);
         }
@@ -393,58 +386,46 @@
         ::-webkit-scrollbar-thumb:hover { background: rgba(255,255,255,0.25); }
 
         /* ============================================================
-           Unified Zoom Widget (top-right)
-           Combines: zoom value, +/- buttons, scale bar
+           Unified Zoom Card (top-right)
+           One card: zoom-out | Z value + scale bar | zoom-in
         ============================================================ */
-        #zoom-widget {
+        #zoom-card {
             position: absolute;
             top: calc(var(--titlebar-h) + 12px);
             right: 12px; z-index: 10;
-            display: flex; flex-direction: column; align-items: flex-end; gap: 6px;
-        }
-        #zoom-nav {
+            display: flex; align-items: stretch;
             background: var(--bg-panel);
             border: 1px solid var(--border);
             border-radius: var(--radius);
             backdrop-filter: blur(16px);
             box-shadow: var(--shadow);
-            display: flex; flex-direction: column; overflow: hidden;
+            overflow: hidden;
         }
-        #zoom-nav .zoom-btn {
-            width: 32px; height: 32px; border: none;
+        #zoom-card .zc-btn {
+            width: 34px; border: none;
             background: transparent; color: var(--text-secondary);
             cursor: pointer; display: flex; align-items: center; justify-content: center;
             transition: background var(--transition), color var(--transition);
-            font: bold 14px/1 "Consolas", monospace;
         }
-        #zoom-nav .zoom-btn:hover { background: rgba(255,255,255,0.1); color: #fff; }
-        #zoom-nav .zoom-btn + .zoom-btn { border-top: 1px solid var(--border); }
-        #zoom-nav .zoom-btn svg { width: 14px; height: 14px; }
+        #zoom-card .zc-btn:hover { background: rgba(128,128,128,0.18); color: var(--text-primary); }
+        #zoom-card .zc-btn svg { width: 14px; height: 14px; }
+        #zoom-card .zc-mid {
+            display: flex; flex-direction: column; align-items: center; justify-content: center;
+            gap: 4px; padding: 6px 12px;
+            border-left: 1px solid var(--border);
+            border-right: 1px solid var(--border);
+        }
         #zoom-value {
-            background: var(--bg-panel);
-            border: 1px solid var(--border);
-            border-radius: var(--radius-sm);
-            backdrop-filter: blur(16px);
-            box-shadow: var(--shadow);
-            padding: 4px 10px;
-            font: bold 12px/1 "Consolas", monospace;
-            color: var(--text-secondary);
-            text-align: center;
+            font: bold 11px/1 "Consolas", monospace;
+            color: var(--text-secondary); text-align: center;
         }
         #scale-bar {
-            background: var(--bg-panel);
-            border: 1px solid var(--border);
-            border-radius: var(--radius-sm);
-            backdrop-filter: blur(16px);
-            box-shadow: var(--shadow);
-            padding: 4px 10px;
-            font: 10px/1 "Consolas", monospace;
-            color: var(--text-muted);
-            white-space: nowrap;
+            font: 9px/1 "Consolas", monospace;
+            color: var(--text-muted); white-space: nowrap;
             display: flex; align-items: center; gap: 4px;
         }
         #scale-bar .scale-line {
-            width: 40px; height: 2px;
+            width: 34px; height: 2px;
             background: var(--text-muted);
             position: relative;
         }
@@ -463,13 +444,36 @@
            后续显隐由 JS 经 CSSOM 切换（不受 CSP 限制）。 */
         #controls-toggle { cursor: pointer; }
         #btn-clear-all, #btn-file-list, #btn-cancel-index { display: none; }
-        .btn-file-list {
-            width: 100%; margin-top: 8px; padding: 6px 0;
-            background: var(--bg-surface); border: 1px solid var(--border);
-            border-radius: var(--radius-sm); color: var(--text-secondary);
-            font-size: 11px; cursor: pointer; transition: all var(--transition);
+        /* Section labels */
+        .section-label {
+            font-size: 10px; color: var(--text-muted);
+            text-transform: uppercase; letter-spacing: 0.8px;
+            margin: 14px 0 6px;
         }
-        .btn-file-list:hover { background: var(--bg-surface-hover); color: var(--text-primary); }
+        #controls-body > .section-label:first-child { margin-top: 0; }
+
+        /* Button row: secondary + danger share one row */
+        .btn-row { display: flex; gap: 8px; margin-top: 10px; }
+        .btn-secondary, .btn-danger {
+            flex: 1; padding: 6px 0;
+            font-size: 11px; border-radius: var(--radius-sm);
+            cursor: pointer; transition: all var(--transition);
+        }
+        .btn-secondary {
+            background: var(--bg-surface); border: 1px solid var(--border);
+            color: var(--text-secondary);
+        }
+        .btn-secondary:hover {
+            background: var(--bg-surface-hover); border-color: var(--border-bright);
+            color: var(--text-primary);
+        }
+        .btn-danger {
+            background: transparent; border: 1px solid rgba(248,113,113,0.28);
+            color: var(--error);
+        }
+        .btn-danger:hover {
+            background: var(--error); border-color: var(--error); color: #fff;
+        }
         .btn-cancel-index {
             width: 100%; margin-top: 8px; padding: 5px 0;
             background: var(--warn-dim); border: 1px solid rgba(217,119,6,0.3);
@@ -480,7 +484,28 @@
         #index-errors { margin-top: 8px; font-size: 10px; max-height: 130px; overflow-y: auto; }
         #index-errors .err-head { color: var(--error); font-weight: 600; margin-bottom: 4px; }
         #index-errors .err-item { color: var(--text-secondary); padding: 2px 0; border-bottom: 1px dashed var(--border); word-break: break-all; }
-        .about { margin-top: 12px; padding-top: 10px; border-top: 1px solid var(--border); }
+        /* Collapsible help/about footer */
+        .meta-toggle {
+            display: flex; align-items: center;
+            font-size: 11px; color: var(--text-muted);
+            cursor: pointer; margin-top: 14px;
+            padding-top: 12px; border-top: 1px solid var(--border);
+        }
+        .meta-toggle .collapse-icon {
+            width: 14px; height: 14px; margin-left: auto;
+            transition: transform var(--transition);
+        }
+        .meta-toggle .collapse-icon.collapsed { transform: rotate(-90deg); }
+        .meta-body {
+            overflow: hidden;
+            max-height: 320px; opacity: 1;
+            transition: max-height 0.25s ease, opacity var(--transition);
+        }
+        .meta-body.collapsed { max-height: 0; opacity: 0; }
+        .meta-body .hint {
+            margin-top: 10px; border-top: none; padding-top: 0;
+        }
+        .about { margin-top: 10px; }
         .about-title { font-size: 11px; font-weight: 600; color: var(--text-secondary); }
         .about-line { font-size: 10px; color: var(--text-muted); margin-top: 3px; }
         .about-sub { font-size: 9px; color: var(--text-muted); margin-top: 2px; opacity: 0.8; }
@@ -510,12 +535,19 @@
         #drag-overlay .do-card svg { width: 40px; height: 40px; margin: 0 auto 10px; opacity: 0.8; }
 
         #filelist-panel {
-            position: fixed; left: 304px;
+            position: fixed; left: 12px;
             top: calc(var(--titlebar-h) + 12px);
             bottom: calc(var(--statusbar-h) + 12px);
-            width: 340px; z-index: 40; display: none;
+            width: 320px; z-index: 200;
+            display: flex; flex-direction: column;
+            transform: translateX(calc(-100% - 20px));
+            transition: transform 0.25s ease;
+            pointer-events: none;
         }
-        #filelist-panel.show { display: flex; flex-direction: column; }
+        #filelist-panel.show {
+            transform: translateX(0);
+            pointer-events: auto;
+        }
         #filelist-panel .fl-summary { font-size: 10px; color: var(--text-muted); margin-left: auto; margin-right: 8px; }
         #filelist-panel .panel-body { padding: 0; max-height: none; flex: 1; overflow-y: auto; }
         .fl-row {
@@ -561,32 +593,40 @@
             <svg class="collapse-icon" viewBox="0 0 12 12" width="12" height="12"><polyline points="2,4 6,8 10,4" fill="none" stroke="currentColor" stroke-width="1.5"/></svg>
         </div>
         <div class="panel-body" id="controls-body">
+            <div class="section-label">数据</div>
             <div class="file-drop" id="file-drop">
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+                    <path d="M3 7a2 2 0 012-2h4l2 2h8a2 2 0 012 2v8a2 2 0 01-2 2H5a2 2 0 01-2-2V7z"/>
+                </svg>
                 <div class="drop-text">点击选择文件夹</div>
-                <div class="drop-hint">支持 VCM / VSM 子目录及 .pmtiles 文件</div>
-                <input type="file" id="folder-input" webkitdirectory multiple />
+                <div class="drop-hint">或将文件夹拖入窗口任意位置</div>
+                <input type="file" id="folder-input" webkitdirectory multiple>
             </div>
-            <button id="btn-clear-all" class="btn-clear-all">清除所有文件</button>
-            <button id="btn-file-list" class="btn-file-list">文件列表</button>
             <div id="main-status"></div>
-            <div id="progress-bar"><div class="pct" id="progress-pct"></div><div class="fill" id="progress-fill"></div></div>
+            <div id="progress-bar">
+                <span id="progress-pct">0%</span>
+                <div class="fill" id="progress-fill"></div>
+            </div>
             <button id="btn-cancel-index" class="btn-cancel-index">取消索引</button>
             <div id="index-errors"></div>
+            <div class="btn-row">
+                <button id="btn-file-list" class="btn-secondary">文件列表</button>
+                <button id="btn-clear-all" class="btn-danger">清除</button>
+            </div>
 
+            <div class="section-label">视图</div>
             <div class="toggle-row">
-                <span class="toggle-label">显示 VCM 等高线</span>
+                <span>显示 VCM 等高线</span>
                 <label class="toggle-switch">
-                    <input type="checkbox" id="vcm-toggle" checked />
+                    <input type="checkbox" id="vcm-toggle" checked>
                     <span class="toggle-track"></span>
                     <span class="toggle-thumb"></span>
                 </label>
             </div>
-
             <div class="toggle-row">
-                <span class="toggle-label">浅色主题</span>
+                <span>浅色主题</span>
                 <label class="toggle-switch">
-                    <input type="checkbox" id="theme-toggle" />
+                    <input type="checkbox" id="theme-toggle">
                     <span class="toggle-track"></span>
                     <span class="toggle-thumb"></span>
                 </label>
@@ -603,29 +643,38 @@
                 </div>
             </div>
 
-            <div class="hint">
-                最小缩放 Z8.0 · 点击要素查看属性<br>
-                右下角按钮切换调试日志
+            <div class="meta-toggle" id="meta-toggle">
+                <span>帮助与关于</span>
+                <svg class="collapse-icon collapsed" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M6 9l6 6 6-6"/>
+                </svg>
             </div>
-            <div class="about">
-                <div class="about-title">关于 MapViewer</div>
-                <div class="about-line">v0.3.1 · 完全离线版</div>
-                <div class="about-sub">Tauri 2 · MapLibre GL JS · PMTiles</div>
+            <div class="meta-body collapsed" id="meta-body">
+                <div class="hint">
+                    最小缩放 Z8.0 · 点击要素查看属性<br>
+                    右下角按钮切换调试日志
+                </div>
+                <div class="about">
+                    <div class="about-title">关于 MapViewer</div>
+                    <div class="about-line">v0.3.1 · 完全离线版</div>
+                    <div class="about-sub">Tauri 2 · MapLibre GL JS · PMTiles</div>
+                </div>
             </div>
         </div>
+
     </div>
 
-    <!-- Unified Zoom Widget -->
-    <div id="zoom-widget">
-        <div id="zoom-value">Z 8.00</div>
-        <div id="zoom-nav">
-            <button class="zoom-btn" id="zoom-in" title="放大"><svg viewBox="0 0 12 12"><line x1="6" y1="2" x2="6" y2="10" stroke="currentColor" stroke-width="1.5"/><line x1="2" y1="6" x2="10" y2="6" stroke="currentColor" stroke-width="1.5"/></svg></button>
-            <button class="zoom-btn" id="zoom-out" title="缩小"><svg viewBox="0 0 12 12"><line x1="2" y1="6" x2="10" y2="6" stroke="currentColor" stroke-width="1.5"/></svg></button>
+    <!-- Unified Zoom Card -->
+    <div id="zoom-card">
+        <button class="zc-btn" id="zoom-out" title="缩小"><svg viewBox="0 0 12 12"><line x1="2" y1="6" x2="10" y2="6" stroke="currentColor" stroke-width="1.5"/></svg></button>
+        <div class="zc-mid">
+            <div id="zoom-value">Z 8.00</div>
+            <div id="scale-bar">
+                <div class="scale-line"></div>
+                <span id="scale-text">—</span>
+            </div>
         </div>
-        <div id="scale-bar">
-            <div class="scale-line"></div>
-            <span id="scale-text">—</span>
-        </div>
+        <button class="zc-btn" id="zoom-in" title="放大"><svg viewBox="0 0 12 12"><line x1="6" y1="2" x2="6" y2="10" stroke="currentColor" stroke-width="1.5"/><line x1="2" y1="6" x2="10" y2="6" stroke="currentColor" stroke-width="1.5"/></svg></button>
     </div>
 
     <!-- Empty State -->
@@ -709,6 +758,16 @@
         document.getElementById("controls-toggle").onclick = function () {
             controlsBody.classList.toggle("collapsed");
             collapseIcon.classList.toggle("collapsed");
+        };
+
+        /* ============================================================
+           Help / About Footer Collapse
+        ============================================================ */
+        var metaBody = document.getElementById("meta-body");
+        var metaIcon = document.querySelector("#meta-toggle .collapse-icon");
+        document.getElementById("meta-toggle").onclick = function () {
+            metaBody.classList.toggle("collapsed");
+            metaIcon.classList.toggle("collapsed");
         };
 
         /* ============================================================
@@ -1502,16 +1561,18 @@
                 "contour");
             bindPaint(ctx, id1, "line-color", function (pp) { return pp.contourIndex; });
 
-            // 计曲线（每 50）沿线条标注高程数字，户外地图刚需
+            // 计曲线（每 50）沿线条标注高程数字，户外地图刚需。
+            // 密度控制：z12 时标注几乎铺满、淹没地名，故起始 zoom 提到 12.5、
+            // 间距拉大到 320、字号收到 8.5（只在需要读高程时才出现）。
             var idl = sn + "_contourlabel";
             addTagged(ctx, { id: idl, source: sn, "source-layer": "Q", type: "symbol",
                 filter: ["all", ["==", ["%", ["get", "F"], 50], 0], ["has", "F"]],
-                minzoom: 10.5,
+                minzoom: 12.5,
                 layout: { "symbol-placement": "line",
-                    "symbol-spacing": 180,
+                    "symbol-spacing": 320,
                     "text-field": ["to-string", ["get", "F"]],
                     "text-font": ["Noto Sans Regular"],
-                    "text-size": 9,
+                    "text-size": 8.5,
                     "text-padding": 2 },
                 paint: { "text-color": p.contourIndex, "text-halo-color": p.halo,
                     "text-halo-width": 1.4 } }, "contour");
