@@ -415,7 +415,7 @@
             display: flex; align-items: center; gap: 4px;
         }
         #scale-bar .scale-line {
-            width: 34px; height: 2px;
+            width: 72px; height: 2px;
             background: var(--text-muted);
             position: relative;
         }
@@ -819,10 +819,8 @@
             debugContent.innerHTML = "";
         };
 
-        // release 构建（非 debug）隐藏调试入口；dev 模式保持可见
-        window.__TAURI__.core.invoke("is_debug_build").then(function (isDbg) {
-            if (!isDbg) debugToggle.style.display = "none";
-        }).catch(function () {});
+        // 调试日志开关在所有构建（含 release）中保持可见：瓦片/字形加载诊断
+        // 对用户同样有用（is_debug_build 命令保留在 Rust 端备用）。
 
         // O7: 原来每写一行就把 80 行拼成字符串整体重设 innerHTML，并读一次 scrollHeight
         // 强制同步布局。瓦片/字形加载失败时 error 事件是高频的，会变成持续的 DOM 重建。
@@ -991,6 +989,8 @@
         ============================================================ */
         var zoomValueEl = document.getElementById("zoom-value");
         var scaleTextEl = document.getElementById("scale-text");
+        var scaleLineEl = document.querySelector("#scale-bar .scale-line");
+        var SCALE_MAX_PX = 72;   // 比例尺线段最大 CSS 像素宽度
 
         document.getElementById("zoom-in").onclick = function () { map.zoomIn(); };
         document.getElementById("zoom-out").onclick = function () { map.zoomOut(); };
@@ -1004,19 +1004,27 @@
         map.on("zoom", updateZoomLabel);
         map.on("move", function () { updateScaleBar(); });
 
+        // 比例尺校准：mpp 为缩放 0、赤道处每 CSS 像素的米数（Web 墨卡托
+        // 标准常数 156543.03392）。MapLibre 的 zoom 以 CSS 像素定义，高分屏
+        // 物理像素 = CSS 像素 × devicePixelRatio，故线段与标注的对应关系在任何
+        // DPI 屏幕上都成立。先按最大线宽算出可表示的最大距离，再向下取
+        // 1/2/5 × 10^n 的"漂亮数值"，最后反推线段实际宽度——标注与线段严格相等。
         function updateScaleBar() {
             var center = map.getCenter();
             var mpp = 156543.03392 * Math.cos(center.lat * Math.PI / 180) / Math.pow(2, map.getZoom());
-            var targetWidth = 60;
-            var realWidth = mpp * targetWidth;
-            var dist = formatDistance(realWidth);
-            scaleTextEl.textContent = dist;
+            var d = niceDistance(mpp * SCALE_MAX_PX);
+            scaleLineEl.style.width = (d / mpp).toFixed(1) + "px";
+            scaleTextEl.textContent = formatDistance(d);
+        }
+        function niceDistance(m) {
+            var p = Math.pow(10, Math.floor(Math.log(m) / Math.LN10));
+            var n = m / p;
+            var s2 = n >= 5 ? 5 : (n >= 2 ? 2 : 1);
+            return s2 * p;
         }
         function formatDistance(m) {
-            if (m >= 1000) return (m / 1000).toFixed(1) + " km";
-            // 清理项: 原 m>=100 与 m>=10 两个分支返回完全相同的值
-            if (m >= 10) return Math.round(m) + " m";
-            return m.toFixed(1) + " m";
+            if (m >= 1000) return m / 1000 + " km";
+            return m + " m";
         }
 
         map.on("load", function () {
